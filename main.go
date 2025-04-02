@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"slices"
-	"strings"
 	"unicode"
 )
 
@@ -71,21 +70,6 @@ func (p *Stream) current() (c rune, err error) {
 	return
 }
 
-func (p *Stream) next(n int) (s string, err error) {
-	if p.pos >= p.len() {
-		return "", errEOF
-	}
-
-	s = string(p.src[p.pos:min(p.pos+n, p.len())])
-	for _, r := range s {
-		if isForbidden(r) {
-			return "", fmt.Errorf("forbidden character %q at %d", r, p.pos)
-		}
-	}
-
-	return
-}
-
 func (p *Stream) advance() (n rune, err error) {
 	n, err = p.current()
 	p.pos++
@@ -93,147 +77,174 @@ func (p *Stream) advance() (n rune, err error) {
 	return
 }
 
-func parse(src string) (p []Directive, err error) {
-	s := Stream{src: []rune(src)}
+// tokens
+type TokenType string
 
-	var dir Directive
-	var arg Argument
+const (
+	TokArgument   TokenType = "Argument"
+	TokWhitespace TokenType = "Whitespace"
+	TokNewline    TokenType = "Newline"
+	TokComment    TokenType = "Comment"
+	TokSemicolon  TokenType = "Semicolon"
+	TokOpenBrace  TokenType = "OpenBrace"
+	TokCloseBrace TokenType = "CloseBrace"
+)
 
-	defer func() {
-		if len(arg) > 0 {
-			dir.Arguments = append(dir.Arguments, arg)
-		}
-		if len(dir.Arguments) > 0 {
-			p = append(p, dir) // add last directive if any
-		}
-	}()
+type Token struct {
+	Type    TokenType
+	Content string
+}
 
+func lexArgument(s *Stream, ok func(rune) bool, ender string) (arg Argument, err error) {
+	var endsMatched int
 	for {
-		curr, err := s.advance()
+		c, err := s.current()
 		if err != nil {
-			if err == errEOF {
-				// end of stream
+			break
+		}
+
+		if ok(c) {
+			arg = append(arg, c)
+			s.advance()
+			continue
+		}
+
+		if ender == "" {
+			break
+		}
+
+		if endsMatched < len(ender) && c == rune(ender[endsMatched]) {
+			endsMatched++
+			s.advance()
+
+			if endsMatched == len(ender) {
+				fmt.Printf("matched ender %s at %d\n", ender, s.pos)
 				break
 			}
-			return nil, err
-		}
 
-		var canBeSpace, canBeNewline bool
-
-		// if starts with 1 quote, can be space
-		// if starts with 3 quotes, can be space or newline
-		if curr == '"' {
-			canBeSpace = true
-
-			curr, err = s.advance()
-			if err != nil {
-				return nil, fmt.Errorf("error at start of quoted argument parsing: %w", err)
+		} else {
+			if endsMatched > 0 {
+				return nil, fmt.Errorf("unexpected character %q at %d", c, s.pos)
 			}
-
-			if curr == '"' {
-				curr, err = s.advance()
-				if err != nil {
-					return nil, fmt.Errorf("error at end of quoted argument parsing: %w", err)
-				}
-
-				if curr == '"' {
-					// triple quotes, can be space or newline
-					canBeNewline = true
-					fmt.Println("start tripel quote")
-					curr, err = s.advance()
-					if err != nil {
-						return nil, fmt.Errorf("error at start of triple quoted argument parsing: %w", err)
-					}
-				} else {
-					// double quotes, end of argument
-					canBeSpace = false
-
-					dir.Arguments = append(dir.Arguments, arg)
-					arg = Argument{} // reset argument
-				}
-			}
-		}
-
-		if isArgument(curr) || (canBeSpace && isWhitespace(curr)) || (canBeNewline && isLineTerminator(curr)) {
-			// start an argument
-			fmt.Println(canBeNewline, canBeSpace, fmt.Sprintf("%q", string(curr)))
-			for isArgument(curr) || (canBeSpace && isWhitespace(curr)) || (canBeNewline && isLineTerminator(curr)) {
-				arg = append(arg, curr)
-				curr, err = s.advance()
-				if err != nil {
-					if err == errEOF {
-						return p, nil
-					}
-					return nil, fmt.Errorf("error during argument parsing: %w", err)
-				}
-
-				if curr == '"' {
-					if canBeSpace && !canBeNewline {
-						// end of argument
-						canBeSpace = false
-						break
-					}
-
-					n2, err := s.next(2)
-					if err != nil {
-						return nil, fmt.Errorf("expected end triple quotes quotes during argument parsing: %w", err)
-					}
-
-					if n2 == `"""` && canBeNewline {
-						// end of argument
-						canBeSpace = false
-						canBeNewline = false
-						s.pos += 2 // skip the quotes
-						break
-					}
-				}
-			}
-
-			if len(arg) > 0 {
-				// argument parsed
-				dir.Arguments = append(dir.Arguments, arg)
-				arg = Argument{} // reset argument
-			}
-		}
-
-		if (isLineTerminator(curr) || curr == ';') && len(dir.Arguments) > 0 {
-			fmt.Println("were done here")
-			// end of directive
-			p = append(p, dir)
-			dir = Directive{} // reset directive
-		} else if curr == '{' {
-			// start of subdirective
-			if len(dir.Arguments) == 0 {
-				return nil, errors.New("subdirective without arguments")
-			}
-
-			//
+			break
 		}
 	}
 
 	return
 }
 
-func printDirective(d Directive, depth int) {
-	prefix := strings.Repeat("  ", depth)
+func lex(src string) (p []Token, err error) {
+	s := Stream{src: []rune(src)}
 
-	fmt.Println(prefix + "Directive:")
-	for _, arg := range d.Arguments {
-		fmt.Printf(prefix+"  Argument: %q\n", string(arg))
+	for {
+		c, err := s.current()
+		if err != nil {
+			break
+		}
+
+		fmt.Printf("current: %q\n", c)
+
+		switch {
+		case isWhitespace(c):
+			s.advance()
+			p = append(p, Token{Type: TokWhitespace, Content: string(c)})
+
+		case isLineTerminator(c):
+			s.advance()
+			p = append(p, Token{Type: TokNewline, Content: string(c)})
+
+		case c == '#': // comment until end of line
+			s.advance()
+			var comment []rune
+			for {
+				s.advance()
+				c, err = s.current()
+				if err != nil || isLineTerminator(c) {
+					break
+				}
+				comment = append(comment, c)
+			}
+			p = append(p, Token{Type: TokComment, Content: string(comment)})
+
+		case c == ';':
+			s.advance()
+			p = append(p, Token{Type: TokSemicolon})
+
+		case c == '{':
+			s.advance()
+			p = append(p, Token{Type: TokOpenBrace})
+
+		case c == '}':
+			s.advance()
+			p = append(p, Token{Type: TokCloseBrace})
+
+		case c == '"': // quoted argument
+			s.advance()
+
+			// if next 2 are also quotes, triple quoted
+			if s.pos+2 < s.len() && s.src[s.pos] == '"' && s.src[s.pos+1] == '"' {
+				s.advance()
+				s.advance()
+
+				arg, err := lexArgument(&s, func(r rune) bool {
+					return !isReserved(r) && !isForbidden(r)
+				}, `"""`)
+				if err != nil {
+					return nil, err
+				} else if len(arg) == 0 {
+					return nil, fmt.Errorf("empty triple quoted argument at %d", s.pos)
+				}
+
+				p = append(p, Token{Type: TokArgument, Content: string(arg)})
+				break
+			}
+
+			arg, err := lexArgument(&s, func(r rune) bool {
+				return !isLineTerminator(r) && !isReserved(r) && !isForbidden(r)
+			}, `"`)
+			if err != nil {
+				return nil, err
+			} else if len(arg) == 0 {
+				return nil, fmt.Errorf("empty quoted argument at %d", s.pos)
+			}
+
+			p = append(p, Token{Type: TokArgument, Content: string(arg)})
+
+		default: // unquoted argument
+			arg, err := lexArgument(&s, func(r rune) bool {
+				return !isWhitespace(r) && !isLineTerminator(r) && !isReserved(r) && !isForbidden(r)
+			}, "")
+			if err != nil {
+				return nil, err
+			} else if len(arg) == 0 {
+				return nil, fmt.Errorf("empty argument at %d", s.pos)
+			}
+
+			p = append(p, Token{Type: TokArgument, Content: string(arg)})
+		}
 	}
-	for _, sub := range d.Subdirectives {
-		fmt.Println(prefix + "  Subdirective:")
-		printDirective(sub, depth+1)
-	}
+
+	return
 }
 
 func main() {
 	const text = `
-hows it """triple
-quoted"" going"""
+this is a test {
+	# this is a comment
+	this is another directive
+}
+
+yep
+
+yep "quoted argument"
+yep
+
+yep """triple quoted 
+
+argument"""
 `
 
-	p, err := parse(text)
+	p, err := lex(text)
 	if err != nil {
 		panic(err)
 	}
@@ -241,7 +252,10 @@ quoted"" going"""
 	fmt.Println("Done!")
 	// fmt.Println(p)
 
-	for _, d := range p {
-		printDirective(d, 0)
+	for _, t := range p {
+		if t.Type == TokWhitespace {
+			continue
+		}
+		fmt.Println(t.Type, t.Content)
 	}
 }
