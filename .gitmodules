@@ -1,0 +1,3 @@
+[submodule "confetti"]
+	path = confetti
+	url = https://github.com/hgs3/confetti
