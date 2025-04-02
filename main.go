@@ -14,15 +14,15 @@ func isForbidden(r rune) bool {
 	return unicode.Is(unicode.Cs, r) || unicode.Is(unicode.Co, r)
 }
 
-// all unicode chars with whitespace property
-func isWhitespace(r rune) bool {
-	return unicode.IsSpace(r)
-}
-
 var lineTerminators = [...]rune{'\r', '\n', '\u000a', '\u000b', '\u000c', '\u000d', '\u0085', '\u2028', '\u2029'}
 
 func isLineTerminator(r rune) bool {
 	return slices.Contains(lineTerminators[:], r)
+}
+
+// all unicode chars with whitespace property
+func isWhitespace(r rune) bool {
+	return !isLineTerminator(r) && unicode.IsSpace(r)
 }
 
 var reserved = [...]rune{'"', '#', ';', '{', '}'}
@@ -81,13 +81,14 @@ func (p *Stream) advance() (n rune, err error) {
 type TokenType string
 
 const (
-	TokArgument   TokenType = "Argument"
-	TokWhitespace TokenType = "Whitespace"
-	TokNewline    TokenType = "Newline"
-	TokComment    TokenType = "Comment"
-	TokSemicolon  TokenType = "Semicolon"
-	TokOpenBrace  TokenType = "OpenBrace"
-	TokCloseBrace TokenType = "CloseBrace"
+	TokArgument       TokenType = "Argument"
+	TokNewline        TokenType = "Newline"
+	TokWhitespace     TokenType = "Whitespace"
+	TokComment        TokenType = "Comment"
+	TokSemicolon      TokenType = "Semicolon"
+	TokOpenBrace      TokenType = "OpenBrace"
+	TokCloseBrace     TokenType = "CloseBrace"
+	TokReverseSolidus TokenType = "ReverseSolidus"
 )
 
 type Token struct {
@@ -95,42 +96,76 @@ type Token struct {
 	Content string
 }
 
-func lexArgument(s *Stream, ok func(rune) bool, ender string) (arg Argument, err error) {
-	var endsMatched int
+func argumentOk(r rune) bool {
+	return !isWhitespace(r) && !isLineTerminator(r) && !isReserved(r) && !isForbidden(r)
+}
+
+func quotedArgumentOk(r rune) bool {
+	return !isLineTerminator(r) && r != '"' && !isForbidden(r)
+}
+
+func tripleQuotedArgumentOk(r rune) bool {
+	return !isForbidden(r) && r != '"'
+}
+
+func lexArgument(s *Stream) (arg []rune, err error) {
 	for {
 		c, err := s.current()
 		if err != nil {
-			break
-		}
-
-		if ok(c) {
+			return nil, err
+		} else if argumentOk(c) {
 			arg = append(arg, c)
 			s.advance()
 			continue
 		}
+		return arg, nil
+	}
+}
 
-		if ender == "" {
-			break
+func lexQuotedArgument(s *Stream) (arg []rune, err error) {
+	for {
+		if c, err := s.current(); err != nil {
+			return nil, err
+		} else if quotedArgumentOk(c) {
+			arg = append(arg, c)
+			s.advance()
+			continue
+		} else if c != '"' {
+			continue
 		}
 
-		if endsMatched < len(ender) && c == rune(ender[endsMatched]) {
-			endsMatched++
-			s.advance()
+		s.advance()
+		return arg, nil
+	}
+}
 
-			if endsMatched == len(ender) {
-				fmt.Printf("matched ender %s at %d\n", ender, s.pos)
-				break
-			}
-
-		} else {
+func lexTripleQuotedArgument(s *Stream) (arg []rune, err error) {
+	var endsMatched int
+	for {
+		c, err := s.current()
+		if err != nil {
+			return nil, err
+		} else if tripleQuotedArgumentOk(c) {
 			if endsMatched > 0 {
-				return nil, fmt.Errorf("unexpected character %q at %d", c, s.pos)
+				arg = append(arg, slices.Repeat([]rune{'"'}, endsMatched)...)
+				endsMatched = 0
+				continue
 			}
-			break
+
+			arg = append(arg, c)
+			s.advance()
+			continue
+		} else if c != '"' {
+			continue
+		}
+
+		endsMatched++
+		s.advance()
+
+		if endsMatched == 3 {
+			return arg, nil
 		}
 	}
-
-	return
 }
 
 func lex(src string) (p []Token, err error) {
@@ -142,16 +177,14 @@ func lex(src string) (p []Token, err error) {
 			break
 		}
 
-		fmt.Printf("current: %q\n", c)
-
 		switch {
-		case isWhitespace(c):
-			s.advance()
-			p = append(p, Token{Type: TokWhitespace, Content: string(c)})
-
 		case isLineTerminator(c):
 			s.advance()
-			p = append(p, Token{Type: TokNewline, Content: string(c)})
+			p = append(p, Token{Type: TokNewline})
+
+		case isWhitespace(c):
+			s.advance()
+			p = append(p, Token{Type: TokWhitespace})
 
 		case c == '#': // comment until end of line
 			s.advance()
@@ -186,9 +219,7 @@ func lex(src string) (p []Token, err error) {
 				s.advance()
 				s.advance()
 
-				arg, err := lexArgument(&s, func(r rune) bool {
-					return !isReserved(r) && !isForbidden(r)
-				}, `"""`)
+				arg, err := lexTripleQuotedArgument(&s)
 				if err != nil {
 					return nil, err
 				} else if len(arg) == 0 {
@@ -199,9 +230,7 @@ func lex(src string) (p []Token, err error) {
 				break
 			}
 
-			arg, err := lexArgument(&s, func(r rune) bool {
-				return !isLineTerminator(r) && !isReserved(r) && !isForbidden(r)
-			}, `"`)
+			arg, err := lexQuotedArgument(&s)
 			if err != nil {
 				return nil, err
 			} else if len(arg) == 0 {
@@ -211,9 +240,7 @@ func lex(src string) (p []Token, err error) {
 			p = append(p, Token{Type: TokArgument, Content: string(arg)})
 
 		default: // unquoted argument
-			arg, err := lexArgument(&s, func(r rune) bool {
-				return !isWhitespace(r) && !isLineTerminator(r) && !isReserved(r) && !isForbidden(r)
-			}, "")
+			arg, err := lexArgument(&s)
 			if err != nil {
 				return nil, err
 			} else if len(arg) == 0 {
@@ -227,23 +254,34 @@ func lex(src string) (p []Token, err error) {
 	return
 }
 
-func main() {
-	const text = `
-this is a test {
-	# this is a comment
-	this is another directive
+const text = `
+# This is a comment.
+
+probe-device eth0 eth1
+
+user * {
+login anonymous
+password "${ENV:ANONPASS}"
+machine 167.89.14.1
+proxy {
+	try-ports 582 583 584
+}
 }
 
-yep
+user "Joe Williams" {
+login joe
+machine 167.89.14.1
+}
 
-yep "quoted argument"
-yep
-
-yep """triple quoted 
-
-argument"""
+paragraph """
+Lorem
+ipsum
+"dolor"
+sit
+amet."""
 `
 
+func main() {
 	p, err := lex(text)
 	if err != nil {
 		panic(err)
@@ -256,6 +294,6 @@ argument"""
 		if t.Type == TokWhitespace {
 			continue
 		}
-		fmt.Println(t.Type, t.Content)
+		fmt.Println(t.Type, ":", t.Content)
 	}
 }
