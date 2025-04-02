@@ -8,33 +8,28 @@ import (
 )
 
 const text = `
-"test system " bold { "what's up?" } " hello"
+states {
+    greet_player {
+        look_at $player
+        wait 1s # Pause one second before walking towards the player.
+        walk_to $player
+        say "Good evening traveler."
+    }
 
-# This is a comment.
-
-probe-device eth0 \
-eth1
-
-user * {
-login anonymous
-password "${ENV:ANONPASS}"
-machine 167.89.14.1
-proxy {
-	try-ports 582 583 584
-}
+    last_words {
+        say "Tis a cruel world!"
+    }
 }
 
-user "Joe Williams" {
-login joe
-machine 167.89.14.1
-}
+events {
+    player_spotted {
+        goto_state greet_player
+    }
 
-paragraph """
-Lorem
-ipsum
-"dolor"
-sit
-amet."""
+    died {
+        goto_state last_words
+    }
+}
 `
 
 func printDirective(d Directive, depth int) {
@@ -50,10 +45,14 @@ func printDirective(d Directive, depth int) {
 }
 
 func main() {
+	fmt.Println("Lexing")
+
 	ts, err := lex(text)
 	if err != nil {
 		panic(err)
 	}
+
+	fmt.Printf("Parsing")
 
 	// for _, t := range ts {
 	// 	if t.Type == TokWhitespace {

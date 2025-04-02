@@ -92,17 +92,27 @@ func tripleQuotedArgumentOk(r rune) bool {
 	return !isForbidden(r) && r != '"'
 }
 
+func checkEscape(s *Stream, c rune) (r rune, err error) {
+	if c == '\\' {
+		s.advance()
+		c, err = s.current()
+		if  err != nil {
+			return
+		} else if isWhitespace(c) || isLineTerminator(c) {
+			return 0, fmt.Errorf("unexpected whitespace or line terminator after '\\' at %d", s.pos)
+		}
+	}
+	return c, nil
+}
+
 func lexArgument(s *Stream) (arg []rune, err error) {
 	for {
 		c, err := s.current()
 		if err != nil {
 			return nil, err
 		} else if argumentOk(c) {
-			if c == '\\' {
-				s.advance()
-				if c, err = s.current(); err != nil {
-					return nil, err
-				}
+			if c, err = checkEscape(s, c); err != nil {
+				return nil, err
 			}
 
 			arg = append(arg, c)
@@ -118,18 +128,15 @@ func lexQuotedArgument(s *Stream) (arg []rune, err error) {
 		if c, err := s.current(); err != nil {
 			return nil, err
 		} else if quotedArgumentOk(c) {
-			if c == '\\' {
-				s.advance()
-				if c, err = s.current(); err != nil {
-					return nil, err
-				}
+			if c, err = checkEscape(s, c); err != nil {
+				return nil, err
 			}
 
 			arg = append(arg, c)
 			s.advance()
 			continue
 		} else if c != '"' {
-			continue
+			return nil, fmt.Errorf("expected '\"' at %d", s.pos)
 		}
 
 		s.advance()
@@ -148,18 +155,15 @@ func lexTripleQuotedArgument(s *Stream) (arg []rune, err error) {
 				arg = append(arg, slices.Repeat([]rune{'"'}, endsMatched)...)
 				endsMatched = 0
 				continue
-			} else if c == '\\' {
-				s.advance()
-				if c, err = s.current(); err != nil {
-					return nil, err
-				}
+			} else if c, err = checkEscape(s, c); err != nil {
+				return nil, err
 			}
 
 			arg = append(arg, c)
 			s.advance()
 			continue
 		} else if c != '"' {
-			continue
+			return nil, fmt.Errorf("expected '\"' at %d", s.pos)
 		}
 
 		endsMatched++
