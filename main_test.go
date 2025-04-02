@@ -14,33 +14,43 @@ type TestCase struct {
 }
 
 func runTest(t *testing.T, c *TestCase) {
+	var p []Directive
+	var out string
+
 	ts, err := lex(c.Input)
 	if err != nil {
-		t.Fatalf("Failed to lex input: %v", err)
+		out = fmt.Sprintf("error: %s\n", err.Error())
 	}
 
-	p, err := parse(ts)
-	if err != nil {
-		t.Fatalf("Failed to parse input: %v", err)
+	if err == nil {
+		p, err = parse(ts)
+		if err != nil {
+			out = fmt.Sprintf("error: %s\n", err.Error())
+		}
 	}
 
-	tf, err := testFormat(p)
-	if err != nil {
-		t.Fatalf("Failed to format output: %v", err)
+	if err == nil {
+		out, err = testFormat(p)
+		if err != nil {
+			out = fmt.Sprintf("error: %s\n", err.Error())
+		}
 	}
 
-	if tf != c.Output {
+	if out != c.Output {
+		fmt.Println(c.Input)
+
 		// print location of the mismatch
-		for pos := 0; pos < min(len(tf), len(c.Output)); pos++ {
-			if tf[pos] != c.Output[pos] {
+		fmt.Println(len(c.Output), len(out))
+		for pos := range min(len(out), len(c.Output)) {
+			if out[pos] != c.Output[pos] {
 				t.Logf("Mismatch at position %d, expected %s, got %s", pos,
-					fmt.Sprintf("%q", c.Output[max(pos-10, 0):pos+2]),
-					fmt.Sprintf("%q", tf[max(pos-10, 0):pos+2]))
+					fmt.Sprintf("%q", c.Output[max(pos-10, 0):min(len(c.Output), pos+2)]),
+					fmt.Sprintf("%q", out[max(pos-10, 0):min(len(out), pos+2)]))
 				break
 			}
 		}
 
-		t.Fatalf("Output mismatch\n-- Expected:\n%s\n-- Got:\n%s", c.Output, tf)
+		t.Fatalf("Output mismatch\n-- Expected:\n%s\n-- Got:\n%s", c.Output, out)
 	}
 }
 

@@ -7,17 +7,18 @@ import (
 	"fmt"
 	"slices"
 	"unicode"
+	"unicode/utf8"
 )
-
-// surrogate, unassigned
-func isForbidden(r rune) bool {
-	return unicode.Is(unicode.Cs, r) || unicode.Is(unicode.Co, r)
-}
 
 var lineTerminators = [...]rune{'\r', '\n', '\u000a', '\u000b', '\u000c', '\u000d', '\u0085', '\u2028', '\u2029'}
 
 func isLineTerminator(r rune) bool {
 	return slices.Contains(lineTerminators[:], r)
+}
+
+// surrogate, unassigned
+func isForbidden(r rune) bool {
+	return unicode.Is(unicode.Cc, r) && !isLineTerminator(r) || unicode.Is(unicode.Cs, r) || unicode.Is(unicode.Co, r)
 }
 
 // all unicode chars with whitespace property
@@ -40,14 +41,21 @@ func (p *Stream) len() int {
 	return len(p.src)
 }
 
+func (p *Stream) reading() bool {
+	return p.pos < p.len()
+}
+
+var errEOF = errors.New("EOF")
+var errForbidden = errors.New("illegal character")
+
 func (p *Stream) current() (c rune, err error) {
 	if p.pos >= p.len() {
-		return 0, errors.New("EOF")
+		return 0, errEOF
 	}
 
 	c = p.src[p.pos]
 	if isForbidden(c) {
-		return 0, fmt.Errorf("forbidden character %q at %d", c, p.pos)
+		return 0, errForbidden
 	}
 
 	return
@@ -96,7 +104,7 @@ func checkEscape(s *Stream, c rune) (r rune, err error) {
 	if c == '\\' {
 		s.advance()
 		c, err = s.current()
-		if  err != nil {
+		if err != nil {
 			return
 		} else if isWhitespace(c) || isLineTerminator(c) {
 			return 0, fmt.Errorf("unexpected whitespace or line terminator after '\\' at %d", s.pos)
@@ -106,7 +114,7 @@ func checkEscape(s *Stream, c rune) (r rune, err error) {
 }
 
 func lexArgument(s *Stream) (arg []rune, err error) {
-	for {
+	for s.reading() {
 		c, err := s.current()
 		if err != nil {
 			return nil, err
@@ -121,6 +129,8 @@ func lexArgument(s *Stream) (arg []rune, err error) {
 		}
 		return arg, nil
 	}
+
+	return
 }
 
 func lexQuotedArgument(s *Stream) (arg []rune, err error) {
@@ -176,9 +186,13 @@ func lexTripleQuotedArgument(s *Stream) (arg []rune, err error) {
 }
 
 func lex(src string) (p []Token, err error) {
+	if !utf8.Valid([]byte(src)) {
+		return nil, errors.New("malformed UTF-8")
+	}
+
 	s := Stream{src: []rune(src)}
 
-	for {
+	for s.reading() {
 		c, err := s.current()
 		if err != nil {
 			break
@@ -199,7 +213,10 @@ func lex(src string) (p []Token, err error) {
 			for {
 				s.advance()
 				c, err = s.current()
-				if err != nil || isLineTerminator(c) {
+				// fmt.Printf("comment: %c\n", c)
+				if err == errForbidden {
+					return nil, err
+				} else if err != nil || isLineTerminator(c) {
 					break
 				}
 				comment = append(comment, c)

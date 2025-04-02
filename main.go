@@ -8,28 +8,7 @@ import (
 )
 
 const text = `
-states {
-    greet_player {
-        look_at $player
-        wait 1s # Pause one second before walking towards the player.
-        walk_to $player
-        say "Good evening traveler."
-    }
-
-    last_words {
-        say "Tis a cruel world!"
-    }
-}
-
-events {
-    player_spotted {
-        goto_state greet_player
-    }
-
-    died {
-        goto_state last_words
-    }
-}
+# This comment contains a forbidden character .
 `
 
 func printDirective(d Directive, depth int) {
