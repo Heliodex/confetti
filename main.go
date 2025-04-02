@@ -8,6 +8,8 @@ import (
 )
 
 const text = `
+"test system " bold { "what's up?" } " hello"
+
 # This is a comment.
 
 probe-device eth0 \
@@ -40,28 +42,27 @@ func printDirective(d Directive, depth int) {
 
 	fmt.Println(prefix + "Directive:")
 	for _, arg := range d.Arguments {
-		fmt.Printf(prefix+"  Argument: %q\n", string(arg))
+		fmt.Printf(prefix+"  %q\n", string(arg))
 	}
 	for _, sub := range d.Subdirectives {
-		fmt.Println(prefix + "  Subdirective:")
 		printDirective(sub, depth+1)
 	}
 }
 
 func main() {
-	t, err := lex(text)
+	ts, err := lex(text)
 	if err != nil {
 		panic(err)
 	}
 
-	// for _, t := range t {
+	// for _, t := range ts {
 	// 	if t.Type == TokWhitespace {
 	// 		continue
 	// 	}
 	// 	fmt.Printf("%14s  %s\n", t.Type, t.Content)
 	// }
 
-	p, err := parse(t)
+	p, err := parse(ts)
 	if err != nil {
 		panic(err)
 	}
