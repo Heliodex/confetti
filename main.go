@@ -31,12 +31,6 @@ func isReserved(r rune) bool {
 	return slices.Contains(reserved[:], r)
 }
 
-// A directive “argument” shall be a sequence of one or more characters from the argument character set. The argument character set shall consist of any Unicode scalar value excluding characters from the white space, line terminator, reserved punctuator, and forbidden character sets.
-
-func isArgument(r rune) bool {
-	return !isWhitespace(r) && !isLineTerminator(r) && !isReserved(r) && !isForbidden(r)
-}
-
 // The Confetti language consists of zero or more directives. A directive consists of one or more arguments and optional subdirectives.
 
 type Argument []rune
@@ -96,6 +90,7 @@ type Token struct {
 	Content string
 }
 
+// A directive “argument” shall be a sequence of one or more characters from the argument character set. The argument character set shall consist of any Unicode scalar value excluding characters from the white space, line terminator, reserved punctuator, and forbidden character sets.
 func argumentOk(r rune) bool {
 	return !isWhitespace(r) && !isLineTerminator(r) && !isReserved(r) && !isForbidden(r)
 }
@@ -114,6 +109,13 @@ func lexArgument(s *Stream) (arg []rune, err error) {
 		if err != nil {
 			return nil, err
 		} else if argumentOk(c) {
+			if c == '\\' {
+				s.advance()
+				if c, err = s.current(); err != nil {
+					return nil, err
+				}
+			}
+
 			arg = append(arg, c)
 			s.advance()
 			continue
@@ -127,6 +129,13 @@ func lexQuotedArgument(s *Stream) (arg []rune, err error) {
 		if c, err := s.current(); err != nil {
 			return nil, err
 		} else if quotedArgumentOk(c) {
+			if c == '\\' {
+				s.advance()
+				if c, err = s.current(); err != nil {
+					return nil, err
+				}
+			}
+
 			arg = append(arg, c)
 			s.advance()
 			continue
@@ -150,6 +159,11 @@ func lexTripleQuotedArgument(s *Stream) (arg []rune, err error) {
 				arg = append(arg, slices.Repeat([]rune{'"'}, endsMatched)...)
 				endsMatched = 0
 				continue
+			} else if c == '\\' {
+				s.advance()
+				if c, err = s.current(); err != nil {
+					return nil, err
+				}
 			}
 
 			arg = append(arg, c)
@@ -211,6 +225,10 @@ func lex(src string) (p []Token, err error) {
 			s.advance()
 			p = append(p, Token{Type: TokCloseBrace})
 
+		case c == '\\':
+			s.advance()
+			p = append(p, Token{Type: TokReverseSolidus})
+
 		case c == '"': // quoted argument
 			s.advance()
 
@@ -257,7 +275,8 @@ func lex(src string) (p []Token, err error) {
 const text = `
 # This is a comment.
 
-probe-device eth0 eth1
+probe-device eth0 \
+eth1
 
 user * {
 login anonymous
@@ -287,13 +306,10 @@ func main() {
 		panic(err)
 	}
 
-	fmt.Println("Done!")
-	// fmt.Println(p)
-
 	for _, t := range p {
 		if t.Type == TokWhitespace {
 			continue
 		}
-		fmt.Println(t.Type, ":", t.Content)
+		fmt.Printf("%14s  %s\n", t.Type, t.Content)
 	}
 }
