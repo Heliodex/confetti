@@ -43,9 +43,9 @@ func runTest(t *testing.T, c *TestCase) {
 		fmt.Println(len(c.Output), len(out))
 		for pos := range min(len(out), len(c.Output)) {
 			if out[pos] != c.Output[pos] {
-				t.Logf("Mismatch at position %d, expected %s, got %s", pos,
-					fmt.Sprintf("%q", c.Output[max(pos-10, 0):min(len(c.Output), pos+2)]),
-					fmt.Sprintf("%q", out[max(pos-10, 0):min(len(out), pos+2)]))
+				t.Logf("Mismatch at position %d, expected %q, got %q", pos,
+					c.Output[max(pos-10, 0):min(len(c.Output), pos+10)],
+					out[max(pos-10, 0):min(len(out), pos+10)])
 				break
 			}
 		}
@@ -108,8 +108,8 @@ func TestConformance(t *testing.T) {
 		}
 	}
 
-	for _, c := range cases {
-		t.Log("Test case", c.Name)
+	for i, c := range cases {
+		t.Logf("%-03d Test case %s", i, c.Name)
 		runTest(t, c)
 	}
 }

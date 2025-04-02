@@ -7,9 +7,7 @@ import (
 	"strings"
 )
 
-const text = `
-# This comment contains a forbidden character .
-`
+const text = `\{\"\'\}\; bar`
 
 func printDirective(d Directive, depth int) {
 	prefix := strings.Repeat("  ", depth)
@@ -31,7 +29,7 @@ func main() {
 		panic(err)
 	}
 
-	fmt.Printf("Parsing")
+	fmt.Println("Parsing")
 
 	// for _, t := range ts {
 	// 	if t.Type == TokWhitespace {

@@ -1,6 +1,9 @@
 package main
 
-import "fmt"
+import (
+	"errors"
+	"fmt"
+)
 
 // The Confetti language consists of zero or more directives. A directive consists of one or more arguments and optional subdirectives.
 
@@ -27,7 +30,12 @@ func parse(lexed []Token) (p []Directive, err error) {
 		switch t.Type {
 		case TokArgument:
 			current.Arguments = append(current.Arguments, Argument(t.Content))
-		case TokNewline, TokSemicolon: // end of directive
+		case TokNewline: // end of directive
+			push()
+		case TokSemicolon: // end of directive
+			if i > 1 && lexed[i-1].Type == TokSemicolon {
+				return nil, errors.New("unexpected ';'")
+			}
 			push()
 		case TokWhitespace, TokComment: // Ignore whitespace and comments
 		case TokOpenBrace:
@@ -53,7 +61,7 @@ func parse(lexed []Token) (p []Directive, err error) {
 			}
 
 			if t.Type != TokCloseBrace {
-				return nil, fmt.Errorf("missing closing brace for subdirective")
+				return nil, fmt.Errorf("expected '}'")
 			}
 
 			subdirs, err := parse(ts)
@@ -69,6 +77,8 @@ func parse(lexed []Token) (p []Directive, err error) {
 				i++
 				t = lexed[i]
 			}
+		case TokCloseBrace:
+			return nil, errors.New("found '}' without matching '{'")
 		default:
 			return nil, fmt.Errorf("unexpected token %s", t.Type)
 		}
