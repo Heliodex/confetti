@@ -22,9 +22,14 @@ func isWhitespace(r rune) bool {
 	return !isLineTerminator(r) && unicode.IsSpace(r)
 }
 
-// surrogate, unassigned
+// characters not in any Unicode category
+func isUnassigned(r rune) bool {
+	return r >= 0x40000 && r <= 0xEFFFF
+}
+
+// surrogate, private use, unassigned
 func isForbidden(r rune) bool {
-	return unicode.Is(unicode.Cc, r) && !isLineTerminator(r) && !isWhitespace(r) || unicode.Is(unicode.Cs, r)
+	return unicode.Is(unicode.Cc, r) && !isLineTerminator(r) && !isWhitespace(r) || unicode.Is(unicode.Cs, r) || r > 0x10FFFF || isUnassigned(r)
 }
 
 var reserved = [...]rune{'"', '#', ';', '{', '}'}
@@ -63,7 +68,7 @@ func (p *Stream) current() (c rune, err error) {
 		if c < 0x10000 {
 			return 0, fmt.Errorf("%w U+%04X", errForbidden, c)
 		}
-		return 0, fmt.Errorf("%w U+%08X", errForbidden, c)
+		return 0, fmt.Errorf("%w U+%X", errForbidden, c)
 	}
 
 	return
@@ -108,20 +113,31 @@ func tripleQuotedArgumentOk(r rune) bool {
 	return !isForbidden(r) && r != '"'
 }
 
-func checkEscape(s *Stream, c rune, quoted bool) (r rune, err error) {
+func checkEscape(s *Stream, c rune, quoted uint8) (r rune, err error) {
 	if c == '\\' {
 		s.advance()
 		if c, err = s.current(); err != nil {
 			if errors.Is(err, errEOF) {
-				if quoted {
+				if quoted > 0 {
 					return 0, errors.New("incomplete escape sequence")
 				} else {
 					return 0, errors.New("illegal escape character")
 				}
+			} else if errors.Is(err, errForbidden) {
+				return 0, errors.New("illegal escape character")
 			}
 			return
 		} else if isWhitespace(c) || isLineTerminator(c) {
-			return 0, errors.New("illegal escape character")
+			if quoted == 3  {
+				if isLineTerminator(c) {
+					return 0, errors.New("incomplete escape sequence")
+				} else {
+					return 0, errors.New("illegal escape character")
+				}
+			} else if quoted == 0 || quoted == 1 && !isLineTerminator(c) {
+				return 0, errors.New("illegal escape character")
+			}
+			return 0, nil
 		}
 	}
 	return c, nil
@@ -133,7 +149,7 @@ func lexArgument(s *Stream) (arg []rune, err error) {
 		if err != nil {
 			return nil, err
 		} else if argumentOk(c) {
-			if c, err = checkEscape(s, c, false); err != nil {
+			if c, err = checkEscape(s, c, 0); err != nil {
 				return nil, err
 			}
 
@@ -157,11 +173,12 @@ func lexQuotedArgument(s *Stream) (arg []rune, err error) {
 			}
 			return nil, err
 		} else if quotedArgumentOk(c) {
-			if c, err = checkEscape(s, c, true); err != nil {
+			if c, err = checkEscape(s, c, 1); err != nil {
 				return nil, err
+			} else if c > 0 {
+				arg = append(arg, c)
 			}
 
-			arg = append(arg, c)
 			s.advance()
 			continue
 		} else if c != '"' {
@@ -178,13 +195,18 @@ func lexTripleQuotedArgument(s *Stream) (arg []rune, err error) {
 	for {
 		c, err := s.current()
 		if err != nil {
+			if errors.Is(err, errEOF) {
+				return nil, errors.New("unclosed quoted")
+			} else if errors.Is(err, errForbidden) {
+				return nil, errForbidden
+			}
 			return nil, err
 		} else if tripleQuotedArgumentOk(c) {
 			if endsMatched > 0 {
 				arg = append(arg, slices.Repeat([]rune{'"'}, endsMatched)...)
 				endsMatched = 0
 				continue
-			} else if c, err = checkEscape(s, c, true); err != nil {
+			} else if c, err = checkEscape(s, c, 3); err != nil {
 				return nil, err
 			}
 

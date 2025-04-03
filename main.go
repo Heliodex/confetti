@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-const text = `\{\"\'\}\; bar`
+const text = `fo󯿿o`
 
 func printDirective(d Directive, depth int) {
 	prefix := strings.Repeat("  ", depth)

@@ -33,12 +33,19 @@ func parse(lexed []Token) (p []Directive, err error) {
 		case TokNewline: // end of directive
 			push()
 		case TokSemicolon: // end of directive
-			if i > 1 && lexed[i-1].Type == TokSemicolon {
-				return nil, errors.New("unexpected ';'")
+			if i > 1 {
+				prev := lexed[i-1]
+				if prev.Type == TokSemicolon || prev.Type == TokCloseBrace {
+					return nil, errors.New("unexpected ';'")
+				}
 			}
 			push()
 		case TokWhitespace, TokComment: // Ignore whitespace and comments
 		case TokOpenBrace:
+			if i == len(lexed)-1 {
+				return nil, fmt.Errorf("unexpected '{'")
+			}
+
 			// Get all tokens until next close brace
 			var ts []Token
 
@@ -69,13 +76,27 @@ func parse(lexed []Token) (p []Directive, err error) {
 				return nil, err
 			}
 
-			current.Subdirectives = subdirs
-			push()
+			if len(current.Arguments) > 0 {
+				current.Subdirectives = subdirs
+				push()
+				break
+			} else if len(p) == 0 {
+				return nil, fmt.Errorf("unexpected '{'")
+			}
+			// push to the previous directive
+
+			last := &p[len(p)-1]
+			last.Subdirectives = subdirs
+
 		case TokReverseSolidus:
 			// escape character
 			if i+1 < len(lexed) {
 				i++
 				t = lexed[i]
+			}
+
+			if t.Type == TokNewline && len(current.Arguments) == 0 {
+				return nil, fmt.Errorf("unexpected line continuation")
 			}
 		case TokCloseBrace:
 			return nil, errors.New("found '}' without matching '{'")

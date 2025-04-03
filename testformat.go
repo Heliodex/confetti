@@ -2,10 +2,13 @@ package main
 
 import "strings"
 
-func testFormat(p []Directive) (f string, err error) {
+func testFormat(p []Directive, depth int) (f string, err error) {
 	var b strings.Builder
 
+	indent := strings.Repeat("    ", depth)
+
 	for _, d := range p {
+		b.WriteString(indent)
 		for i, a := range d.Arguments {
 			b.WriteByte('<')
 			b.WriteString(string(a))
@@ -17,23 +20,13 @@ func testFormat(p []Directive) (f string, err error) {
 
 		if len(d.Subdirectives) > 0 {
 			b.WriteString(" [\n")
-			subdirs, err := testFormat(d.Subdirectives)
+			subdirs, err := testFormat(d.Subdirectives, depth+1)
 			if err != nil {
 				return "", err
 			}
 
-			// indent subdirs
-			lines := strings.Split(subdirs, "\n")
-			for i, line := range lines {
-				if i > 0 {
-					b.WriteByte('\n')
-				}
-				if i < len(lines)-1 {
-					b.WriteString("    ")
-				}
-				b.WriteString(line)
-			}
-
+			b.WriteString(subdirs)
+			b.WriteString(indent)
 			b.WriteString("]")
 
 		}

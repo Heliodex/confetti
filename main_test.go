@@ -30,7 +30,7 @@ func runTest(t *testing.T, c *TestCase) {
 	}
 
 	if err == nil {
-		out, err = testFormat(p)
+		out, err = testFormat(p, 0)
 		if err != nil {
 			out = fmt.Sprintf("error: %s\n", err.Error())
 		}
