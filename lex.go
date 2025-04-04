@@ -43,12 +43,8 @@ type Stream struct {
 	pos int
 }
 
-func (p *Stream) len() int {
-	return len(p.src)
-}
-
-func (p *Stream) reading() bool {
-	return p.pos < p.len()
+func (s *Stream) reading() bool {
+	return s.pos < len(s.src)
 }
 
 var (
@@ -56,13 +52,13 @@ var (
 	errForbidden = errors.New("illegal character")
 )
 
-func (p *Stream) current() (c rune, err error) {
-	if p.pos >= p.len() {
+func (s *Stream) current() (c rune, err error) {
+	if s.pos >= len(s.src) {
 		// panic("EOF")
 		return 0, errEOF
 	}
 
-	c = p.src[p.pos]
+	c = s.src[s.pos]
 	if isForbidden(c) {
 		// get illegal character as U+XXXX
 		if c < 0x10000 {
@@ -74,22 +70,25 @@ func (p *Stream) current() (c rune, err error) {
 	return
 }
 
-func (p *Stream) advance() {
-	p.pos++
+func (s *Stream) next(n int) rune {
+	if s.pos+n < len(s.src) {
+		return s.src[s.pos+n]
+	}
+	return 0
 }
 
 // tokens
-type TokenType string
+type TokenType uint8
 
 const (
-	TokArgument       TokenType = "Argument"
-	TokNewline        TokenType = "Newline"
-	TokWhitespace     TokenType = "Whitespace"
-	TokComment        TokenType = "Comment"
-	TokSemicolon      TokenType = "Semicolon"
-	TokOpenBrace      TokenType = "OpenBrace"
-	TokCloseBrace     TokenType = "CloseBrace"
-	TokReverseSolidus TokenType = "ReverseSolidus"
+	TokArgument TokenType = iota
+	TokNewline
+	TokLineContinuation
+	TokWhitespace
+	TokComment
+	TokSemicolon
+	TokOpenBrace
+	TokCloseBrace
 )
 
 type Token struct {
@@ -121,7 +120,7 @@ func checkEscape(s *Stream, c rune, quoted uint8) (r rune, err error) {
 		return c, nil
 	}
 
-	s.advance()
+	s.pos++
 	if c, err = s.current(); err != nil {
 		if errors.Is(err, errForbidden) {
 			return 0, errIllegalEscape
@@ -155,7 +154,7 @@ func lexUnquotedArgument(s *Stream) (arg []rune, err error) {
 		}
 
 		arg = append(arg, c)
-		s.advance()
+		s.pos++
 	}
 
 	return
@@ -170,7 +169,7 @@ func lexQuotedArgument(s *Stream) (arg []rune, err error) {
 				return nil, errUnclosedQuoted
 			}
 
-			s.advance()
+			s.pos++
 			return arg, nil
 		} else if c, err = checkEscape(s, c, 1); err != nil {
 			return nil, err
@@ -178,7 +177,7 @@ func lexQuotedArgument(s *Stream) (arg []rune, err error) {
 			arg = append(arg, c)
 		}
 
-		s.advance()
+		s.pos++
 	}
 
 	return nil, errUnclosedQuoted
@@ -199,13 +198,13 @@ func lexTripleQuotedArgument(s *Stream) (arg []rune, err error) {
 			}
 
 			arg = append(arg, c)
-			s.advance()
+			s.pos++
 			continue
 		} else if c != '"' {
 			return nil, fmt.Errorf("expected '\"' at %d", s.pos)
 		}
 
-		s.advance()
+		s.pos++
 
 		if endsMatched == 2 {
 			return arg, nil
@@ -239,31 +238,26 @@ func lex(src string) (p []Token, err error) {
 
 	// check for forbidden characters must be done based on token/location
 
-	s := Stream{src: []rune(src)}
-
-	for s.reading() {
+	for s := (Stream{src: []rune(src)}); s.reading(); {
 		c, err := s.current()
 		if err != nil {
 			break
 		}
 
 		// fmt.Printf("lex: %q\n", c)
-		argQuotes := 0
 
-		switch {
+		s.pos++
+		switch argQuotes := 0; {
 		case isLineTerminator(c):
-			s.advance()
 			p = append(p, Token{Type: TokNewline})
 
 		case isWhitespace(c):
-			s.advance()
 			p = append(p, Token{Type: TokWhitespace})
 
 		case c == '#': // comment until end of line
-			s.advance()
-			var comment []rune
+			op := s.pos
 			for {
-				s.advance()
+				s.pos++
 				c, err = s.current()
 				// fmt.Printf("comment: %c\n", c)
 				if errors.Is(err, errForbidden) {
@@ -271,27 +265,23 @@ func lex(src string) (p []Token, err error) {
 				} else if err != nil || isLineTerminator(c) {
 					break
 				}
-				comment = append(comment, c)
 			}
-			p = append(p, Token{Type: TokComment, Content: string(comment)})
+			p = append(p, Token{Type: TokComment, Content: string(s.src[op:s.pos])})
 
 		case c == ';':
-			s.advance()
 			p = append(p, Token{Type: TokSemicolon})
 
 		case c == '{':
-			s.advance()
 			p = append(p, Token{Type: TokOpenBrace})
 
 		case c == '}':
-			s.advance()
 			p = append(p, Token{Type: TokCloseBrace})
 
-		case c == '\\' && s.pos+1 < s.len() && isLineTerminator(s.src[s.pos+1]):
-			s.advance()
-			p = append(p, Token{Type: TokReverseSolidus})
+		case c == '\\' && isLineTerminator(s.next(0)):
+			s.pos++
+			p = append(p, Token{Type: TokLineContinuation})
 
-		case c == '"' && s.pos+3 < s.len() && s.src[s.pos+1] == '"' && s.src[s.pos+2] == '"':
+		case c == '"' && s.next(0) == '"' && s.next(1) == '"': // triple quoted argument
 			argQuotes += 2
 			fallthrough
 
@@ -300,9 +290,7 @@ func lex(src string) (p []Token, err error) {
 			fallthrough
 
 		default: // unquoted argument
-			for range argQuotes {
-				s.advance()
-			}
+			s.pos += argQuotes - 1
 
 			arg, err := lexArgument(&s, argQuotes)
 			if err != nil {

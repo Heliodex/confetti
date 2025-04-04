@@ -18,7 +18,7 @@ func printDirective(d Directive, depth int) {
 
 	fmt.Println(prefix + "Directive:")
 	for _, arg := range d.Arguments {
-		fmt.Printf(prefix+"  %q\n", string(arg))
+		fmt.Printf(prefix+"  %q\n", arg)
 	}
 	for _, sub := range d.Subdirectives {
 		printDirective(sub, depth+1)
