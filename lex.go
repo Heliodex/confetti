@@ -137,7 +137,7 @@ func checkEscape(s *Stream, c rune, quoted uint8) (r rune, err error) {
 		} else if quoted == 0 || quoted == 1 && !isLineTerminator(c) {
 			return 0, errIllegalEscape
 		}
-		return
+		return // r = 0 used to signify line terminator
 	}
 	return c, nil
 }
@@ -173,7 +173,7 @@ func lexQuotedArgument(s *Stream) (arg []rune, err error) {
 			return arg, nil
 		} else if c, err = checkEscape(s, c, 1); err != nil {
 			return nil, err
-		} else if c > 0 {
+		} else if c > 0 { // escaped line terminators allowed in quoted arguments
 			arg = append(arg, c)
 		}
 
@@ -184,32 +184,32 @@ func lexQuotedArgument(s *Stream) (arg []rune, err error) {
 }
 
 func lexTripleQuotedArgument(s *Stream) (arg []rune, err error) {
-	var endsMatched int
-	for s.reading() {
-		if c, err := s.current(); errors.Is(err, errForbidden) {
+	for endsMatched := 0; s.reading(); {
+		c, err := s.current()
+		if errors.Is(err, errForbidden) {
 			return nil, errForbidden
-		} else if tripleQuotedArgumentOk(c) {
-			if endsMatched > 0 {
-				arg = append(arg, slices.Repeat([]rune{'"'}, endsMatched)...)
-				endsMatched = 0
-				continue
-			} else if c, err = checkEscape(s, c, 3); err != nil {
-				return nil, err
+		} else if !tripleQuotedArgumentOk(c) {
+			if c != '"' {
+				return nil, errUnclosedQuoted
 			}
 
-			arg = append(arg, c)
 			s.pos++
-			continue
-		} else if c != '"' {
-			return nil, fmt.Errorf("expected '\"' at %d", s.pos)
-		}
 
-		s.pos++
-
-		if endsMatched == 2 {
+			endsMatched++
+			if endsMatched != 3 {
+				continue
+			}
 			return arg, nil
+		} else if endsMatched > 0 {
+			arg = append(arg, slices.Repeat([]rune{'"'}, endsMatched)...)
+			endsMatched = 0
+			continue
+		} else if c, err = checkEscape(s, c, 3); err != nil {
+			return nil, err
 		}
-		endsMatched++
+
+		arg = append(arg, c)
+		s.pos++
 	}
 
 	return nil, errUnclosedQuoted
@@ -230,9 +230,9 @@ func lexArgument(s *Stream, quotes int) (arg []rune, err error) {
 func lex(src string) (p []Token, err error) {
 	src = strings.TrimPrefix(src, "\uFEFF") // remove BOMs
 	src = strings.TrimPrefix(src, "\uFFFE")
-	src = strings.TrimSuffix(src, "\u001a") // remove ^Z
+	src = strings.TrimSuffix(src, "\u001a") // remove end ^Z
 
-	if !utf8.Valid([]byte(src)) {
+	if !utf8.ValidString(src) {
 		return nil, errors.New("malformed UTF-8")
 	}
 

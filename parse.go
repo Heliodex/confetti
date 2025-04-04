@@ -13,7 +13,7 @@ type Directive struct {
 	Subdirectives []Directive
 }
 
-func parse(lexed []Token) (p []Directive, err error) {
+func parse(ts []Token) (p []Directive, err error) {
 	var current Directive
 	push := func() {
 		if current.Arguments == nil {
@@ -23,22 +23,22 @@ func parse(lexed []Token) (p []Directive, err error) {
 		current = Directive{}
 	}
 
-	prevNonWhitespace := func(i int) (prev Token) {
+	prevSignificant := func(i int) (prev Token) {
 		for i--; i > 0; i-- {
-			if prev = lexed[i]; prev.Type != TokWhitespace && prev.Type != TokComment {
+			if prev = ts[i]; prev.Type != TokWhitespace && prev.Type != TokComment {
 				return
 			}
 		}
 		return
 	}
 
-	for i := 0; i < len(lexed); i++ {
-		switch t := lexed[i]; t.Type {
+	for i := 0; i < len(ts); i++ {
+		switch t := ts[i]; t.Type {
 		case TokArgument:
 			current.Arguments = append(current.Arguments, t.Content)
 
 		case TokSemicolon: // end of directive
-			if prev := prevNonWhitespace(i); prev.Type == TokSemicolon || prev.Type == TokNewline || prev.Type == TokLineContinuation {
+			if prev := prevSignificant(i); prev.Type == TokSemicolon || prev.Type == TokNewline || prev.Type == TokLineContinuation {
 				return nil, errors.New("unexpected ';'")
 			}
 			fallthrough
@@ -49,44 +49,43 @@ func parse(lexed []Token) (p []Directive, err error) {
 		case TokComment, TokWhitespace: // Ignore whitespace and comments
 
 		case TokOpenBrace:
-			if i == len(lexed)-1 || prevNonWhitespace(i).Type == TokSemicolon {
+			if i == len(ts)-1 || prevSignificant(i).Type == TokSemicolon {
 				// fmt.Println(prevNonWhitespace(i).Type == TokSemicolon)
 				return nil, fmt.Errorf("unexpected '{'")
 			}
 
 			// Get all tokens until next close brace
-			var ts []Token
+			var subts []Token
+			var depth int // also account for nested
 
-			depth := 1 // also account for nested
-
-			for i++; i < len(lexed); i++ {
+			for i++; i < len(ts); i++ {
 				// escapes should be dealt with in lexer
-				if t = lexed[i]; t.Type == TokOpenBrace {
+				if t = ts[i]; t.Type == TokOpenBrace {
 					depth++
 				} else if t.Type == TokCloseBrace {
 					depth--
 				}
 
-				if depth == 0 {
+				if depth < 0 {
 					break
 				}
-				ts = append(ts, t)
+				subts = append(subts, t)
 			}
 
-			if depth != 0 {
+			if depth >= 0 {
 				return nil, fmt.Errorf("expected '}'")
 			}
 
-			subdirs, err := parse(ts)
+			subp, err := parse(subts)
 			if err != nil {
 				return nil, err
 			} else if current.Arguments == nil {
 				// push to the previous directive
-				p[len(p)-1].Subdirectives = subdirs
+				p[len(p)-1].Subdirectives = subp
 				break
 			}
 
-			current.Subdirectives = subdirs
+			current.Subdirectives = subp
 			push()
 
 		case TokCloseBrace:
