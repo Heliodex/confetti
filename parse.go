@@ -24,16 +24,23 @@ func parse(lexed []Token) (p []Directive, err error) {
 		current = Directive{}
 	}
 
+	prevNonWhitespace := func(i int) (prev Token) {
+		for i--; i > 0; i-- {
+			if prev = lexed[i]; prev.Type != TokWhitespace && prev.Type != TokComment {
+				return
+			}
+		}
+		return
+	}
+
 	for i := 0; i < len(lexed); i++ {
 		switch t := lexed[i]; t.Type {
 		case TokArgument:
 			current.Arguments = append(current.Arguments, Argument(t.Content))
 
 		case TokSemicolon: // end of directive
-			if i > 1 {
-				if prev := lexed[i-1]; prev.Type == TokSemicolon || prev.Type == TokCloseBrace {
-					return nil, errors.New("unexpected ';'")
-				}
+			if prev := prevNonWhitespace(i); prev.Type == TokSemicolon || prev.Type == TokNewline {
+				return nil, errors.New("unexpected ';'")
 			}
 			fallthrough
 
@@ -43,7 +50,8 @@ func parse(lexed []Token) (p []Directive, err error) {
 		case TokComment, TokWhitespace: // Ignore whitespace and comments
 
 		case TokOpenBrace:
-			if i == len(lexed)-1 {
+			if i == len(lexed)-1 || prevNonWhitespace(i).Type == TokSemicolon {
+				// fmt.Println(prevNonWhitespace(i).Type == TokSemicolon)
 				return nil, fmt.Errorf("unexpected '{'")
 			}
 
