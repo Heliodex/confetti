@@ -23,15 +23,13 @@ func runTest(t *testing.T, c *TestCase) {
 	}
 
 	if err == nil {
-		p, err = parse(ts)
-		if err != nil {
+		if p, err = parse(ts); err != nil {
 			out = fmt.Sprintf("error: %s\n", err.Error())
 		}
 	}
 
 	if err == nil {
-		out, err = testFormat(p, 0)
-		if err != nil {
+		if out, err = testFormat(p, 0); err != nil {
 			out = fmt.Sprintf("error: %s\n", err.Error())
 		}
 	}
@@ -89,8 +87,7 @@ func TestConformance(t *testing.T) {
 		var found bool
 		for _, c := range cases {
 			if c.Name == n {
-				err := addTest(c, n, v)
-				if err != nil {
+				if err := addTest(c, n, v); err != nil {
 					t.Fatalf("Failed to add test case: %v", err)
 				}
 				found = true
@@ -100,8 +97,7 @@ func TestConformance(t *testing.T) {
 
 		if !found {
 			c := &TestCase{Name: n}
-			err := addTest(c, n, v)
-			if err != nil {
+			if err := addTest(c, n, v); err != nil {
 				t.Fatalf("Failed to add test case: %v", err)
 			}
 			cases = append(cases, c)
@@ -109,7 +105,7 @@ func TestConformance(t *testing.T) {
 	}
 
 	for i, c := range cases {
-		t.Logf("%-03d Test case %s", i, c.Name)
+		t.Logf("%-03d Test case %s", i+1, c.Name)
 		runTest(t, c)
 	}
 }

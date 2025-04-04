@@ -74,11 +74,8 @@ func (p *Stream) current() (c rune, err error) {
 	return
 }
 
-func (p *Stream) advance() (n rune, err error) {
-	n, err = p.current()
+func (p *Stream) advance() {
 	p.pos++
-
-	return
 }
 
 // tokens
@@ -113,94 +110,85 @@ func tripleQuotedArgumentOk(r rune) bool {
 	return !isForbidden(r) && r != '"'
 }
 
+var (
+	errIncompleteEscape = errors.New("incomplete escape sequence")
+	errIllegalEscape    = errors.New("illegal escape character")
+	errUnclosedQuoted   = errors.New("unclosed quoted")
+)
+
 func checkEscape(s *Stream, c rune, quoted uint8) (r rune, err error) {
-	if c == '\\' {
-		s.advance()
-		if c, err = s.current(); err != nil {
-			if errors.Is(err, errEOF) {
-				if quoted > 0 {
-					return 0, errors.New("incomplete escape sequence")
-				} else {
-					return 0, errors.New("illegal escape character")
-				}
-			} else if errors.Is(err, errForbidden) {
-				return 0, errors.New("illegal escape character")
-			}
-			return
-		} else if isWhitespace(c) || isLineTerminator(c) {
-			if quoted == 3  {
-				if isLineTerminator(c) {
-					return 0, errors.New("incomplete escape sequence")
-				} else {
-					return 0, errors.New("illegal escape character")
-				}
-			} else if quoted == 0 || quoted == 1 && !isLineTerminator(c) {
-				return 0, errors.New("illegal escape character")
-			}
-			return 0, nil
+	if c != '\\' {
+		return c, nil
+	}
+
+	s.advance()
+	if c, err = s.current(); err != nil {
+		if errors.Is(err, errForbidden) {
+			return 0, errIllegalEscape
+		} else if quoted > 0 {
+			return 0, errIncompleteEscape
 		}
+		return 0, errIllegalEscape
+	} else if isWhitespace(c) || isLineTerminator(c) {
+		if quoted == 3 {
+			if isLineTerminator(c) {
+				return 0, errIncompleteEscape
+			}
+			return 0, errIllegalEscape
+		} else if quoted == 0 || quoted == 1 && !isLineTerminator(c) {
+			return 0, errIllegalEscape
+		}
+		return
 	}
 	return c, nil
 }
 
-func lexArgument(s *Stream) (arg []rune, err error) {
+func lexUnquotedArgument(s *Stream) (arg []rune, err error) {
 	for s.reading() {
 		c, err := s.current()
 		if err != nil {
 			return nil, err
-		} else if argumentOk(c) {
-			if c, err = checkEscape(s, c, 0); err != nil {
-				return nil, err
-			}
-
-			arg = append(arg, c)
-			s.advance()
-			continue
+		} else if !argumentOk(c) {
+			return arg, nil
+		} else if c, err = checkEscape(s, c, 0); err != nil {
+			return nil, err
 		}
-		return arg, nil
+
+		arg = append(arg, c)
+		s.advance()
 	}
 
 	return
 }
 
 func lexQuotedArgument(s *Stream) (arg []rune, err error) {
-	for {
-		if c, err := s.current(); err != nil {
-			if errors.Is(err, errEOF) {
-				return nil, errors.New("unclosed quoted")
-			} else if errors.Is(err, errForbidden) {
-				return nil, errForbidden
-			}
-			return nil, err
-		} else if quotedArgumentOk(c) {
-			if c, err = checkEscape(s, c, 1); err != nil {
-				return nil, err
-			} else if c > 0 {
-				arg = append(arg, c)
+	for s.reading() {
+		if c, err := s.current(); errors.Is(err, errForbidden) {
+			return nil, errForbidden
+		} else if !quotedArgumentOk(c) {
+			if c != '"' {
+				return nil, errUnclosedQuoted
 			}
 
 			s.advance()
-			continue
-		} else if c != '"' {
-			return nil, errors.New("unclosed quoted")
+			return arg, nil
+		} else if c, err = checkEscape(s, c, 1); err != nil {
+			return nil, err
+		} else if c > 0 {
+			arg = append(arg, c)
 		}
 
 		s.advance()
-		return arg, nil
 	}
+
+	return nil, errUnclosedQuoted
 }
 
 func lexTripleQuotedArgument(s *Stream) (arg []rune, err error) {
 	var endsMatched int
-	for {
-		c, err := s.current()
-		if err != nil {
-			if errors.Is(err, errEOF) {
-				return nil, errors.New("unclosed quoted")
-			} else if errors.Is(err, errForbidden) {
-				return nil, errForbidden
-			}
-			return nil, err
+	for s.reading() {
+		if c, err := s.current(); errors.Is(err, errForbidden) {
+			return nil, errForbidden
 		} else if tripleQuotedArgumentOk(c) {
 			if endsMatched > 0 {
 				arg = append(arg, slices.Repeat([]rune{'"'}, endsMatched)...)
@@ -217,13 +205,27 @@ func lexTripleQuotedArgument(s *Stream) (arg []rune, err error) {
 			return nil, fmt.Errorf("expected '\"' at %d", s.pos)
 		}
 
-		endsMatched++
 		s.advance()
 
-		if endsMatched == 3 {
+		if endsMatched == 2 {
 			return arg, nil
 		}
+		endsMatched++
 	}
+
+	return nil, errUnclosedQuoted
+}
+
+func lexArgument(s *Stream, quotes int) (arg []rune, err error) {
+	switch quotes {
+	case 0:
+		return lexUnquotedArgument(s)
+	case 1:
+		return lexQuotedArgument(s)
+	case 3:
+		return lexTripleQuotedArgument(s)
+	}
+	return
 }
 
 func lex(src string) (p []Token, err error) {
@@ -235,6 +237,8 @@ func lex(src string) (p []Token, err error) {
 		return nil, errors.New("malformed UTF-8")
 	}
 
+	// check for forbidden characters must be done based on token/location
+
 	s := Stream{src: []rune(src)}
 
 	for s.reading() {
@@ -244,6 +248,7 @@ func lex(src string) (p []Token, err error) {
 		}
 
 		// fmt.Printf("lex: %q\n", c)
+		argQuotes := 0
 
 		switch {
 		case isLineTerminator(c):
@@ -286,36 +291,22 @@ func lex(src string) (p []Token, err error) {
 			s.advance()
 			p = append(p, Token{Type: TokReverseSolidus})
 
+		case c == '"' && s.pos+3 < s.len() && s.src[s.pos+1] == '"' && s.src[s.pos+2] == '"':
+			argQuotes += 2
+			fallthrough
+
 		case c == '"': // quoted argument
-			s.advance()
-
-			// if next 2 are also quotes, triple quoted
-			if s.pos+2 < s.len() && s.src[s.pos] == '"' && s.src[s.pos+1] == '"' {
-				s.advance()
-				s.advance()
-
-				arg, err := lexTripleQuotedArgument(&s)
-				if err != nil {
-					return nil, err
-				}
-
-				p = append(p, Token{Type: TokArgument, Content: string(arg)})
-				break
-			}
-
-			arg, err := lexQuotedArgument(&s)
-			if err != nil {
-				return nil, err
-			}
-
-			p = append(p, Token{Type: TokArgument, Content: string(arg)})
+			argQuotes++
+			fallthrough
 
 		default: // unquoted argument
-			arg, err := lexArgument(&s)
+			for range argQuotes {
+				s.advance()
+			}
+
+			arg, err := lexArgument(&s, argQuotes)
 			if err != nil {
 				return nil, err
-			} else if len(arg) == 0 {
-				return nil, fmt.Errorf("empty argument at %d", s.pos)
 			}
 
 			p = append(p, Token{Type: TokArgument, Content: string(arg)})

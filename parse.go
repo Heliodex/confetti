@@ -25,22 +25,23 @@ func parse(lexed []Token) (p []Directive, err error) {
 	}
 
 	for i := 0; i < len(lexed); i++ {
-		t := lexed[i]
-
-		switch t.Type {
+		switch t := lexed[i]; t.Type {
 		case TokArgument:
 			current.Arguments = append(current.Arguments, Argument(t.Content))
-		case TokNewline: // end of directive
-			push()
+
 		case TokSemicolon: // end of directive
 			if i > 1 {
-				prev := lexed[i-1]
-				if prev.Type == TokSemicolon || prev.Type == TokCloseBrace {
+				if prev := lexed[i-1]; prev.Type == TokSemicolon || prev.Type == TokCloseBrace {
 					return nil, errors.New("unexpected ';'")
 				}
 			}
+			fallthrough
+
+		case TokNewline: // end of directive
 			push()
-		case TokWhitespace, TokComment: // Ignore whitespace and comments
+
+		case TokComment, TokWhitespace: // Ignore whitespace and comments
+
 		case TokOpenBrace:
 			if i == len(lexed)-1 {
 				return nil, fmt.Errorf("unexpected '{'")
@@ -49,13 +50,11 @@ func parse(lexed []Token) (p []Directive, err error) {
 			// Get all tokens until next close brace
 			var ts []Token
 
-			// also account for nested
-			depth := 1
+			depth := 1 // also account for nested
 
 			for i++; i < len(lexed); i++ {
-				t = lexed[i]
-
-				if t.Type == TokOpenBrace {
+				// escapes should be dealt with in lexer
+				if t = lexed[i]; t.Type == TokOpenBrace {
 					depth++
 				} else if t.Type == TokCloseBrace {
 					depth--
@@ -67,41 +66,33 @@ func parse(lexed []Token) (p []Directive, err error) {
 				ts = append(ts, t)
 			}
 
-			if t.Type != TokCloseBrace {
+			if depth != 0 {
 				return nil, fmt.Errorf("expected '}'")
 			}
 
 			subdirs, err := parse(ts)
 			if err != nil {
 				return nil, err
-			}
-
-			if len(current.Arguments) > 0 {
-				current.Subdirectives = subdirs
-				push()
+			} else if len(current.Arguments) == 0 {
+				// push to the previous directive
+				p[len(p)-1].Subdirectives = subdirs
 				break
-			} else if len(p) == 0 {
-				return nil, fmt.Errorf("unexpected '{'")
 			}
-			// push to the previous directive
 
-			last := &p[len(p)-1]
-			last.Subdirectives = subdirs
+			current.Subdirectives = subdirs
+			push()
+
+		case TokCloseBrace:
+			return nil, errors.New("found '}' without matching '{'")
 
 		case TokReverseSolidus:
 			// escape character
-			if i+1 < len(lexed) {
-				i++
-				t = lexed[i]
-			}
-
-			if t.Type == TokNewline && len(current.Arguments) == 0 {
+			i++
+			if i >= len(lexed) {
+				break
+			} else if t = lexed[i]; t.Type == TokNewline && len(current.Arguments) == 0 {
 				return nil, fmt.Errorf("unexpected line continuation")
 			}
-		case TokCloseBrace:
-			return nil, errors.New("found '}' without matching '{'")
-		default:
-			return nil, fmt.Errorf("unexpected token %s", t.Type)
 		}
 	}
 

@@ -25,9 +25,8 @@ func testFormat(p []Directive, depth int) (f string, err error) {
 				return "", err
 			}
 
-			b.WriteString(subdirs)
-			b.WriteString(indent)
-			b.WriteString("]")
+			b.WriteString(subdirs + indent)
+			b.WriteByte(']')
 
 		}
 
