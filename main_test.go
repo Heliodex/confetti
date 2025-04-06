@@ -19,7 +19,7 @@ func runTest(t *testing.T, c *TestCase) {
 		t.Fatalf("Test case %s is missing input", c.Name)
 	} else if c.Output == nil {
 		t.Fatalf("Test case %s is missing output", c.Name)
-	} else if c.Extension != "" {
+	} else if c.Extension != "" && c.Extension != "c_style_comments" {
 		t.Logf("Skipping test case with extension %s", c.Extension)
 		return
 	}

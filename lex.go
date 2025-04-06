@@ -254,10 +254,13 @@ func lex(src string) (p []Token, err error) {
 		case isWhitespace(c):
 			p = append(p, Token{Type: TokWhitespace})
 
+		case c == '/' && s.next(0) == '/': // C-style comment
+			s.pos++
+			fallthrough
+
 		case c == '#': // comment until end of line
 			op := s.pos
 			for {
-				s.pos++
 				c, err = s.current()
 				// fmt.Printf("comment: %c\n", c)
 				if errors.Is(err, errForbidden) {
@@ -265,8 +268,27 @@ func lex(src string) (p []Token, err error) {
 				} else if err != nil || isLineTerminator(c) {
 					break
 				}
+				s.pos++
 			}
 			p = append(p, Token{Type: TokComment, Content: string(s.src[op:s.pos])})
+
+		case c == '/' && s.next(0) == '*': // block comment
+			s.pos++
+			op := s.pos
+			for {
+				c, err = s.current()
+				// fmt.Printf("comment: %c\n", c)
+				if errors.Is(err, errForbidden) {
+					return nil, errForbidden
+				} else if err != nil {
+					return nil, errors.New("unterminated multi-line comment")
+				} else if c == '*' && s.next(1) == '/' {
+					break
+				}
+				s.pos++
+			}
+			p = append(p, Token{Type: TokComment, Content: string(s.src[op:s.pos])})
+			s.pos += 2
 
 		case c == ';':
 			p = append(p, Token{Type: TokSemicolon})
