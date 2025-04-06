@@ -10,8 +10,8 @@ import (
 const testsDir = "./confetti/tests/suite"
 
 type TestCase struct {
-	Name          string
-	Input, Output *string
+	Name, Extension string
+	Input, Output   *string
 }
 
 func runTest(t *testing.T, c *TestCase) {
@@ -19,6 +19,9 @@ func runTest(t *testing.T, c *TestCase) {
 		t.Fatalf("Test case %s is missing input", c.Name)
 	} else if c.Output == nil {
 		t.Fatalf("Test case %s is missing output", c.Name)
+	} else if c.Extension != "" {
+		t.Logf("Skipping test case with extension %s", c.Extension)
+		return
 	}
 
 	rin, rout := *c.Input, *c.Output
@@ -78,11 +81,15 @@ func TestConformance(t *testing.T) {
 
 		strdata := strings.ReplaceAll(string(data), "\r\n", "\n")
 
-		switch v {
-		case "conf":
+		switch {
+		case v == "conf":
 			c.Input = &strdata
-		case "pass", "fail":
+		case v == "pass", v == "fail":
 			c.Output = &strdata
+		case strings.HasPrefix(v, "ext_"):
+			c.Extension = v[4:]
+		default:
+			return fmt.Errorf("unknown file type %s", v)
 		}
 
 		return nil
@@ -114,7 +121,7 @@ func TestConformance(t *testing.T) {
 	}
 
 	for i, c := range cases {
-		t.Logf("%-03d Test case %s", i+1, c.Name)
+		t.Logf("Test case %d\nconfetti/tests/suite/%s.conf", i+1, c.Name)
 		runTest(t, c)
 	}
 }

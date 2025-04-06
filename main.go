@@ -6,6 +6,12 @@ import (
 	"strings"
 )
 
+var extensions = map[string]struct{}{
+	"c_style_comments": {},
+	"expression_arguments":  {},
+	"punctuator_arguments": {},
+}
+
 const text = `foo
 {
     bar
