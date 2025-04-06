@@ -13,7 +13,7 @@ type Directive struct {
 	Subdirectives []Directive
 }
 
-func parse(ts []Token) (p []Directive, err error) {
+func parse(ts []Token, exts Extensions) (p []Directive, err error) {
 	var current Directive
 	push := func() {
 		if current.Arguments == nil {
@@ -76,7 +76,7 @@ func parse(ts []Token) (p []Directive, err error) {
 				return nil, fmt.Errorf("expected '}'")
 			}
 
-			subp, err := parse(subts)
+			subp, err := parse(subts, exts)
 			if err != nil {
 				return nil, err
 			} else if current.Arguments == nil {

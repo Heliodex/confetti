@@ -10,8 +10,9 @@ import (
 const testsDir = "./confetti/tests/suite"
 
 type TestCase struct {
-	Name, Extension string
-	Input, Output   *string
+	Name          string
+	Input, Output *string
+	Extensions    Extensions
 }
 
 func runTest(t *testing.T, c *TestCase) {
@@ -19,9 +20,6 @@ func runTest(t *testing.T, c *TestCase) {
 		t.Fatalf("Test case %s is missing input", c.Name)
 	} else if c.Output == nil {
 		t.Fatalf("Test case %s is missing output", c.Name)
-	} else if c.Extension != "" && c.Extension != "c_style_comments" {
-		t.Logf("Skipping test case with extension %s", c.Extension)
-		return
 	}
 
 	rin, rout := *c.Input, *c.Output
@@ -29,13 +27,13 @@ func runTest(t *testing.T, c *TestCase) {
 	var p []Directive
 	var out string
 
-	ts, err := lex(rin)
+	ts, err := lex(rin, c.Extensions)
 	if err != nil {
 		out = fmt.Sprintf("error: %s\n", err.Error())
 	}
 
 	if err == nil {
-		if p, err = parse(ts); err != nil {
+		if p, err = parse(ts, c.Extensions); err != nil {
 			out = fmt.Sprintf("error: %s\n", err.Error())
 		}
 	}
@@ -87,7 +85,10 @@ func TestConformance(t *testing.T) {
 		case v == "pass", v == "fail":
 			c.Output = &strdata
 		case strings.HasPrefix(v, "ext_"):
-			c.Extension = v[4:]
+			if c.Extensions == nil {
+				c.Extensions = make(Extensions, 1)
+			}
+			c.Extensions[v[4:]] = strdata
 		default:
 			return fmt.Errorf("unknown file type %s", v)
 		}

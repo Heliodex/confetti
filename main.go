@@ -6,10 +6,17 @@ import (
 	"strings"
 )
 
-var extensions = map[string]struct{}{
-	"c_style_comments": {},
-	"expression_arguments":  {},
-	"punctuator_arguments": {},
+type Extensions map[string]string
+
+func (e Extensions) Has(name string) bool {
+	_, ok := e[name]
+	return ok
+}
+
+var extensions = Extensions{
+	"c_style_comments": "",
+	"expression_arguments":  "",
+	// "punctuator_arguments": "",
 }
 
 const text = `foo
@@ -34,7 +41,7 @@ func printDirective(d Directive, depth int) {
 func main() {
 	fmt.Println("Lexing")
 
-	ts, err := lex(text)
+	ts, err := lex(text, extensions)
 	if err != nil {
 		panic(err)
 	}
@@ -48,7 +55,7 @@ func main() {
 	// 	fmt.Printf("%14s  %s\n", t.Type, t.Content)
 	// }
 
-	p, err := parse(ts)
+	p, err := parse(ts, extensions)
 	if err != nil {
 		panic(err)
 	}

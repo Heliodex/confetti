@@ -227,7 +227,7 @@ func lexArgument(s *Stream, quotes int) (arg []rune, err error) {
 	return
 }
 
-func lex(src string) (p []Token, err error) {
+func lex(src string, exts Extensions) (p []Token, err error) {
 	src = strings.TrimPrefix(src, "\uFEFF") // remove BOMs
 	src = strings.TrimPrefix(src, "\uFFFE")
 	src = strings.TrimSuffix(src, "\u001a") // remove end ^Z
@@ -254,7 +254,7 @@ func lex(src string) (p []Token, err error) {
 		case isWhitespace(c):
 			p = append(p, Token{Type: TokWhitespace})
 
-		case c == '/' && s.next(0) == '/': // C-style comment
+		case exts.Has("c_style_comments") && c == '/' && s.next(0) == '/': // C-style comment
 			s.pos++
 			fallthrough
 
@@ -272,7 +272,7 @@ func lex(src string) (p []Token, err error) {
 			}
 			p = append(p, Token{Type: TokComment, Content: string(s.src[op:s.pos])})
 
-		case c == '/' && s.next(0) == '*': // block comment
+		case exts.Has("c_style_comments") && c == '/' && s.next(0) == '*': // block comment
 			s.pos++
 			op := s.pos
 			for {
