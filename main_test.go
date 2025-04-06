@@ -10,14 +10,23 @@ import (
 const testsDir = "./confetti/tests/suite"
 
 type TestCase struct {
-	Name, Input, Output string
+	Name          string
+	Input, Output *string
 }
 
 func runTest(t *testing.T, c *TestCase) {
+	if c.Input == nil {
+		t.Fatalf("Test case %s is missing input", c.Name)
+	} else if c.Output == nil {
+		t.Fatalf("Test case %s is missing output", c.Name)
+	}
+
+	rin, rout := *c.Input, *c.Output
+
 	var p []Directive
 	var out string
 
-	ts, err := lex(c.Input)
+	ts, err := lex(rin)
 	if err != nil {
 		out = fmt.Sprintf("error: %s\n", err.Error())
 	}
@@ -34,21 +43,21 @@ func runTest(t *testing.T, c *TestCase) {
 		}
 	}
 
-	if out != c.Output {
+	if out != rout {
 		fmt.Println(c.Input)
 
 		// print location of the mismatch
-		fmt.Println(len(c.Output), len(out))
-		for pos := range min(len(out), len(c.Output)) {
-			if out[pos] != c.Output[pos] {
+		fmt.Println(len(rout), len(out))
+		for pos := range min(len(out), len(rout)) {
+			if out[pos] != rout[pos] {
 				t.Logf("Mismatch at position %d, expected %q, got %q", pos,
-					c.Output[max(pos-10, 0):min(len(c.Output), pos+10)],
+					rout[max(pos-10, 0):min(len(rout), pos+10)],
 					out[max(pos-10, 0):min(len(out), pos+10)])
 				break
 			}
 		}
 
-		t.Fatalf("Output mismatch\n-- Expected:\n%s\n-- Got:\n%s", c.Output, out)
+		t.Fatalf("Output mismatch\n-- Expected:\n%s\n-- Got:\n%s", rout, out)
 	}
 }
 
@@ -70,10 +79,10 @@ func TestConformance(t *testing.T) {
 		strdata := strings.ReplaceAll(string(data), "\r\n", "\n")
 
 		switch v {
-		case "in":
-			c.Input = strdata
-		case "out", "err":
-			c.Output = strdata
+		case "conf":
+			c.Input = &strdata
+		case "pass", "fail":
+			c.Output = &strdata
 		}
 
 		return nil
