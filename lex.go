@@ -34,8 +34,8 @@ func isForbidden(r rune) bool {
 
 var reserved = [...]rune{'"', '#', ';', '{', '}'}
 
-func isReserved(r rune) bool {
-	return slices.Contains(reserved[:], r)
+func isReserved(r rune, exts Extensions) bool {
+	return slices.Contains(reserved[:], r) || exts.Has("expression_arguments") && (r == '(' || r == ')')
 }
 
 type Stream struct {
@@ -97,8 +97,8 @@ type Token struct {
 }
 
 // A directive “argument” shall be a sequence of one or more characters from the argument character set. The argument character set shall consist of any Unicode scalar value excluding characters from the white space, line terminator, reserved punctuator, and forbidden character sets.
-func argumentOk(r rune) bool {
-	return !isWhitespace(r) && !isLineTerminator(r) && !isReserved(r) && !isForbidden(r)
+func argumentOk(r rune, exts Extensions) bool {
+	return !isWhitespace(r) && !isLineTerminator(r) && !isReserved(r, exts) && !isForbidden(r)
 }
 
 func quotedArgumentOk(r rune) bool {
@@ -142,12 +142,41 @@ func checkEscape(s *Stream, c rune, quoted uint8) (r rune, err error) {
 	return c, nil
 }
 
-func lexUnquotedArgument(s *Stream) (arg []rune, err error) {
+func getPunctuator(s *Stream, ps string) []rune {
+	ps = strings.ReplaceAll(ps, "\r\n", "\n")
+	ps = strings.ReplaceAll(ps, "\r", "\n")
+	ps = strings.TrimSpace(ps)
+
+	puncts := strings.Split(ps, "\n")
+	// sort puncts by length descending
+	slices.SortFunc(puncts, func(a, b string) int {
+		return len([]rune(b)) - len([]rune(a))
+	})
+	// fmt.Printf("punctuators: %q\n", puncts)
+
+	for _, p := range puncts {
+		rest := s.src[s.pos:]
+
+		rp := []rune(p)
+		l := len(rp)
+		fmt.Printf("%q %d\n", p, l)
+		if l <= len(rest) && string(rest[:l]) == p {
+			// fmt.Printf("punctuator: %q\n", p)
+			return rp
+		}
+	}
+	// fmt.Printf("not a punctuator: %q\n", s.src[s.pos:])
+	return nil
+}
+
+func lexUnquotedArgument(s *Stream, exts Extensions) (arg []rune, err error) {
 	for s.reading() {
 		c, err := s.current()
 		if err != nil {
 			return nil, err
-		} else if !argumentOk(c) {
+		} else if !argumentOk(c, exts) {
+			return arg, nil
+		} else if exts.Has("punctuator_arguments") && getPunctuator(s, exts["punctuator_arguments"]) != nil {
 			return arg, nil
 		} else if c, err = checkEscape(s, c, 0); err != nil {
 			return nil, err
@@ -215,10 +244,10 @@ func lexTripleQuotedArgument(s *Stream) (arg []rune, err error) {
 	return nil, errUnclosedQuoted
 }
 
-func lexArgument(s *Stream, quotes int) (arg []rune, err error) {
+func lexArgument(s *Stream, quotes int, exts Extensions) (arg []rune, err error) {
 	switch quotes {
 	case 0:
-		return lexUnquotedArgument(s)
+		return lexUnquotedArgument(s, exts)
 	case 1:
 		return lexQuotedArgument(s)
 	case 3:
@@ -246,19 +275,21 @@ func lex(src string, exts Extensions) (p []Token, err error) {
 
 		// fmt.Printf("lex: %q\n", c)
 
-		s.pos++
 		switch argQuotes := 0; {
 		case isLineTerminator(c):
+			s.pos++
 			p = append(p, Token{Type: TokNewline})
 
 		case isWhitespace(c):
+			s.pos++
 			p = append(p, Token{Type: TokWhitespace})
 
-		case exts.Has("c_style_comments") && c == '/' && s.next(0) == '/': // C-style comment
+		case exts.Has("c_style_comments") && c == '/' && s.next(1) == '/': // C-style comment
 			s.pos++
 			fallthrough
 
 		case c == '#': // comment until end of line
+			s.pos++
 			op := s.pos
 			for {
 				c, err = s.current()
@@ -272,8 +303,8 @@ func lex(src string, exts Extensions) (p []Token, err error) {
 			}
 			p = append(p, Token{Type: TokComment, Content: string(s.src[op:s.pos])})
 
-		case exts.Has("c_style_comments") && c == '/' && s.next(0) == '*': // block comment
-			s.pos++
+		case exts.Has("c_style_comments") && c == '/' && s.next(1) == '*': // block comment
+			s.pos += 2
 			op := s.pos
 			for {
 				c, err = s.current()
@@ -291,19 +322,55 @@ func lex(src string, exts Extensions) (p []Token, err error) {
 			s.pos += 2
 
 		case c == ';':
+			s.pos++
 			p = append(p, Token{Type: TokSemicolon})
 
 		case c == '{':
+			s.pos++
 			p = append(p, Token{Type: TokOpenBrace})
 
 		case c == '}':
+			s.pos++
 			p = append(p, Token{Type: TokCloseBrace})
 
-		case c == '\\' && isLineTerminator(s.next(0)):
-			s.pos++
+		case c == '\\' && isLineTerminator(s.next(1)):
+			s.pos += 2
 			p = append(p, Token{Type: TokLineContinuation})
 
-		case c == '"' && s.next(0) == '"' && s.next(1) == '"': // triple quoted argument
+		case exts.Has("expression_arguments") && c == '(':
+			s.pos++
+			// read until corresponding closing parenthesis
+			op := s.pos
+			depth := 1
+			for {
+				c, err = s.current()
+				if errors.Is(err, errForbidden) {
+					return nil, errForbidden
+				} else if err != nil || isLineTerminator(c) {
+					return nil, errors.New("incomplete expression")
+				} else if c == '(' {
+					depth++
+				} else if c == ')' {
+					depth--
+					if depth == 0 {
+						break
+					}
+				}
+				s.pos++
+			}
+			p = append(p, Token{Type: TokArgument, Content: string(s.src[op:s.pos])})
+			s.pos++
+
+		case exts.Has("expression_arguments") && c == ')':
+			return nil, fmt.Errorf("unexpected '%c'", c)
+
+		case exts.Has("punctuator_arguments") && getPunctuator(&s, exts["punctuator_arguments"]) != nil:
+			// read punctuator as argument
+			punc := getPunctuator(&s, exts["punctuator_arguments"])
+			s.pos += len(punc)
+			p = append(p, Token{Type: TokArgument, Content: string(punc)})
+
+		case c == '"' && s.next(1) == '"' && s.next(2) == '"': // triple quoted argument
 			argQuotes += 2
 			fallthrough
 
@@ -312,9 +379,9 @@ func lex(src string, exts Extensions) (p []Token, err error) {
 			fallthrough
 
 		default: // unquoted argument
-			s.pos += argQuotes - 1
+			s.pos += argQuotes
 
-			arg, err := lexArgument(&s, argQuotes)
+			arg, err := lexArgument(&s, argQuotes, exts)
 			if err != nil {
 				return nil, err
 			}
