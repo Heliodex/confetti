@@ -55,10 +55,11 @@ func parse(ts []Token, exts Extensions) (p []Directive, err error) {
 			}
 
 			// Get all tokens until next close brace
-			var subts []Token
 			var depth int // also account for nested
 
-			for i++; i < len(ts); i++ {
+			i++
+			si := i
+			for ; i < len(ts); i++ {
 				// escapes should be dealt with in lexer
 				if t = ts[i]; t.Type == TokOpenBrace {
 					depth++
@@ -69,14 +70,13 @@ func parse(ts []Token, exts Extensions) (p []Directive, err error) {
 				if depth < 0 {
 					break
 				}
-				subts = append(subts, t)
 			}
 
 			if depth >= 0 {
 				return nil, fmt.Errorf("expected '}'")
 			}
 
-			subp, err := parse(subts, exts)
+			subp, err := parse(ts[si:i], exts)
 			if err != nil {
 				return nil, err
 			} else if current.Arguments == nil {

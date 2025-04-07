@@ -122,10 +122,6 @@ func TestConformance(t *testing.T) {
 	}
 
 	for i, c := range cases {
-		if c.Name == "expression_argument_parentheses_argument" {
-			// skip this test case 62
-			continue
-		}
 		t.Logf("Test case %d\nconfetti/tests/suite/%s.conf", i+1, c.Name)
 		runTest(t, c)
 	}
