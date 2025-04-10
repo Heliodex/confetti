@@ -95,15 +95,15 @@ type Token struct {
 
 // A directive “argument” shall be a sequence of one or more characters from the argument character set. The argument character set shall consist of any Unicode scalar value excluding characters from the white space, line terminator, reserved punctuator, and forbidden character sets.
 func argumentOk(r rune, exts Extensions) bool {
-	return !isWhitespace(r) && !isLineTerminator(r) && !isReserved(r, exts) && !isForbidden(r)
+	return !isWhitespace(r) && !isLineTerminator(r) && !isReserved(r, exts)
 }
 
 func quotedArgumentOk(r rune) bool {
-	return !isLineTerminator(r) && r != '"' && !isForbidden(r)
+	return !isLineTerminator(r) && r != '"'
 }
 
 func tripleQuotedArgumentOk(r rune) bool {
-	return !isForbidden(r) && r != '"'
+	return r != '"'
 }
 
 var (
@@ -239,18 +239,6 @@ func lexTripleQuotedArgument(s *Stream) (arg []rune, err error) {
 	return nil, errUnclosedQuoted
 }
 
-func lexArgument(s *Stream, quotes int, exts Extensions) (arg []rune, err error) {
-	switch quotes {
-	case 0:
-		return lexUnquotedArgument(s, exts)
-	case 1:
-		return lexQuotedArgument(s)
-	case 3:
-		return lexTripleQuotedArgument(s)
-	}
-	return
-}
-
 func lex(src string, exts Extensions) (p []Token, err error) {
 	src = strings.TrimPrefix(src, "\uFEFF") // remove BOMs
 	src = strings.TrimPrefix(src, "\uFFFE")
@@ -270,8 +258,7 @@ func lex(src string, exts Extensions) (p []Token, err error) {
 
 		// fmt.Printf("lex: %q\n", c)
 
-		op := s.pos
-		switch argQuotes := 0; {
+		switch op := s.pos; {
 		case isLineTerminator(c):
 			s.pos++
 			p = append(p, Token{Type: TokNewline})
@@ -281,39 +268,37 @@ func lex(src string, exts Extensions) (p []Token, err error) {
 			p = append(p, Token{Type: TokWhitespace})
 
 		case exts.Has("c_style_comments") && c == '/' && s.next(1) == '/': // C-style comment
-			s.pos++
-			fallthrough
-
-		case c == '#': // comment until end of line
-			s.pos++
-			for {
-				c, err = s.current()
-				// fmt.Printf("comment: %c\n", c)
-				if errors.Is(err, errForbidden) {
+			for s.pos += 2; ; s.pos++ {
+				if c, err = s.current(); errors.Is(err, errForbidden) {
 					return nil, errForbidden
 				} else if err != nil || isLineTerminator(c) {
 					break
 				}
-				s.pos++
+			}
+			p = append(p, Token{Type: TokComment, Content: string(s.src[op+2 : s.pos])})
+
+		case c == '#': // comment until end of line
+			for s.pos++; ; s.pos++ {
+				if c, err = s.current(); errors.Is(err, errForbidden) {
+					return nil, errForbidden
+				} else if err != nil || isLineTerminator(c) {
+					break
+				}
 			}
 			p = append(p, Token{Type: TokComment, Content: string(s.src[op+1 : s.pos])})
 
 		case exts.Has("c_style_comments") && c == '/' && s.next(1) == '*': // block comment
-			s.pos += 2
-			for {
-				c, err = s.current()
-				// fmt.Printf("comment: %c\n", c)
-				if errors.Is(err, errForbidden) {
+			for s.pos += 2; ; s.pos++ {
+				if c, err = s.current(); errors.Is(err, errForbidden) {
 					return nil, errForbidden
 				} else if err != nil {
 					return nil, errors.New("unterminated multi-line comment")
 				} else if c == '*' && s.next(1) == '/' {
 					break
 				}
-				s.pos++
 			}
 			p = append(p, Token{Type: TokComment, Content: string(s.src[op+2 : s.pos])})
-			s.pos += 2
+			s.pos += 2 // */
 
 		case c == ';':
 			s.pos++
@@ -334,22 +319,19 @@ func lex(src string, exts Extensions) (p []Token, err error) {
 		case exts.Has("expression_arguments") && c == '(':
 			s.pos++
 			// read until corresponding closing parenthesis
-			depth := 1
-			for {
-				c, err = s.current()
-				if errors.Is(err, errForbidden) {
+			for depth := 0; ; s.pos++ {
+				if c, err = s.current(); errors.Is(err, errForbidden) {
 					return nil, errForbidden
 				} else if err != nil || isLineTerminator(c) {
 					return nil, errors.New("incomplete expression")
 				} else if c == '(' {
 					depth++
 				} else if c == ')' {
-					depth--
 					if depth == 0 {
 						break
 					}
+					depth--
 				}
-				s.pos++
 			}
 			p = append(p, Token{Type: TokArgument, Content: string(s.src[op+1 : s.pos])})
 			s.pos++
@@ -360,21 +342,26 @@ func lex(src string, exts Extensions) (p []Token, err error) {
 			p = append(p, Token{Type: TokArgument, Content: string(s.src[op:s.pos])})
 
 		case c == '"' && s.next(1) == '"' && s.next(2) == '"': // triple quoted argument
-			argQuotes += 2
-			fallthrough
-
-		case c == '"': // quoted argument
-			argQuotes++
-			fallthrough
-
-		default: // unquoted argument
-			s.pos += argQuotes
-
-			arg, err := lexArgument(&s, argQuotes, exts)
+			s.pos += 3
+			arg, err := lexTripleQuotedArgument(&s)
 			if err != nil {
 				return nil, err
 			}
+			p = append(p, Token{Type: TokArgument, Content: string(arg)})
 
+		case c == '"': // quoted argument
+			s.pos++
+			arg, err := lexQuotedArgument(&s)
+			if err != nil {
+				return nil, err
+			}
+			p = append(p, Token{Type: TokArgument, Content: string(arg)})
+
+		default: // unquoted argument
+			arg, err := lexUnquotedArgument(&s, exts)
+			if err != nil {
+				return nil, err
+			}
 			p = append(p, Token{Type: TokArgument, Content: string(arg)})
 		}
 	}

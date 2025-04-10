@@ -23,9 +23,9 @@ func parse(ts []Token, exts Extensions) (p []Directive, err error) {
 		current = Directive{}
 	}
 
-	prevSignificant := func(i int) (prev Token) {
+	prevSignificant := func(i int) (prev TokenType) {
 		for i--; i > 0; i-- {
-			if prev = ts[i]; prev.Type != TokWhitespace && prev.Type != TokComment {
+			if prev = ts[i].Type; prev != TokWhitespace && prev != TokComment {
 				return
 			}
 		}
@@ -38,7 +38,7 @@ func parse(ts []Token, exts Extensions) (p []Directive, err error) {
 			current.Arguments = append(current.Arguments, t.Content)
 
 		case TokSemicolon: // end of directive
-			if prev := prevSignificant(i); prev.Type == TokSemicolon || prev.Type == TokNewline || prev.Type == TokLineContinuation {
+			if prev := prevSignificant(i); prev == TokSemicolon || prev == TokNewline || prev == TokLineContinuation {
 				return nil, errors.New("unexpected ';'")
 			}
 			fallthrough
@@ -46,34 +46,27 @@ func parse(ts []Token, exts Extensions) (p []Directive, err error) {
 		case TokNewline: // end of directive
 			push()
 
-		case TokComment, TokWhitespace: // Ignore whitespace and comments
-
 		case TokOpenBrace:
-			if i == len(ts)-1 || prevSignificant(i).Type == TokSemicolon {
+			if i == len(ts)-1 || prevSignificant(i) == TokSemicolon {
 				// fmt.Println(prevNonWhitespace(i).Type == TokSemicolon)
 				return nil, fmt.Errorf("unexpected '{'")
 			}
 
 			// Get all tokens until next close brace
-			var depth int // also account for nested
-
 			i++
 			si := i
-			for ; i < len(ts); i++ {
+			for depth := 0; i < len(ts); i++ {
 				// escapes should be dealt with in lexer
 				if t = ts[i]; t.Type == TokOpenBrace {
 					depth++
 				} else if t.Type == TokCloseBrace {
+					if depth == 0 {
+						break
+					}
 					depth--
+				} else if i == len(ts)-1 {
+					return nil, fmt.Errorf("expected '}'")
 				}
-
-				if depth < 0 {
-					break
-				}
-			}
-
-			if depth >= 0 {
-				return nil, fmt.Errorf("expected '}'")
 			}
 
 			subp, err := parse(ts[si:i], exts)
