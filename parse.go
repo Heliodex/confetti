@@ -34,7 +34,7 @@ func parse(ts []Token, exts Extensions) (p []Directive, err error) {
 
 	for i := 0; i < len(ts); i++ {
 		switch t := ts[i]; t.Type {
-		case TokArgument:
+		case Tok0qArgument, Tok1qArgument, Tok3qArgument:
 			current.Arguments = append(current.Arguments, t.Content)
 
 		case TokSemicolon: // end of directive

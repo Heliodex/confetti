@@ -15,60 +15,11 @@ type TestCase struct {
 	Extensions    Extensions
 }
 
-func runTest(t *testing.T, c *TestCase) {
-	if c.Input == nil {
-		t.Fatalf("Test case %s is missing input", c.Name)
-	} else if c.Output == nil {
-		t.Fatalf("Test case %s is missing output", c.Name)
-	}
-
-	rin, rout := *c.Input, *c.Output
-
-	var p []Directive
-	var out string
-
-	ts, err := lex(rin, c.Extensions)
-	if err != nil {
-		out = fmt.Sprintf("error: %s\n", err.Error())
-	}
-
-	if err == nil {
-		if p, err = parse(ts, c.Extensions); err != nil {
-			out = fmt.Sprintf("error: %s\n", err.Error())
-		}
-	}
-
-	if err == nil {
-		if out, err = testFormat(p, 0); err != nil {
-			out = fmt.Sprintf("error: %s\n", err.Error())
-		}
-	}
-
-	if out != rout {
-		fmt.Println(*c.Input)
-
-		// print location of the mismatch
-		fmt.Println(len(rout), len(out))
-		for pos := range min(len(out), len(rout)) {
-			if out[pos] != rout[pos] {
-				t.Logf("Mismatch at position %d, expected %q, got %q", pos,
-					rout[max(pos-10, 0):min(len(rout), pos+10)],
-					out[max(pos-10, 0):min(len(out), pos+10)])
-				break
-			}
-		}
-
-		t.Fatalf("Output mismatch\n-- Expected:\n%s\n-- Got:\n%s", rout, out)
-	}
-}
-
-func TestConformance(t *testing.T) {
+func getCases(t *testing.T) (cases []*TestCase, err error) {
 	dir, err := os.ReadDir(testsDir)
 	if err != nil {
 		t.Fatalf("Failed to read tests directory: %v", err)
 	}
-
-	var cases []*TestCase
 
 	addTest := func(c *TestCase, n, v string) error {
 		// read file
@@ -104,8 +55,8 @@ func TestConformance(t *testing.T) {
 		var found bool
 		for _, c := range cases {
 			if c.Name == n {
-				if err := addTest(c, n, v); err != nil {
-					t.Fatalf("Failed to add test case: %v", err)
+				if err = addTest(c, n, v); err != nil {
+					return
 				}
 				found = true
 				break
@@ -114,15 +65,82 @@ func TestConformance(t *testing.T) {
 
 		if !found {
 			c := &TestCase{Name: n}
-			if err := addTest(c, n, v); err != nil {
-				t.Fatalf("Failed to add test case: %v", err)
+			if err = addTest(c, n, v); err != nil {
+				return
 			}
 			cases = append(cases, c)
 		}
 	}
 
+	for _, c := range cases {
+		if c.Input == nil {
+			t.Fatalf("Test case %s is missing input", c.Name)
+		} else if c.Output == nil {
+			t.Fatalf("Test case %s is missing output", c.Name)
+		}
+	}
+
+	return
+}
+
+func runConformanceTest(c *TestCase, t *testing.T) {
+	rin, rout, exts := *c.Input, *c.Output, c.Extensions
+
+	var p []Directive
+	var out string
+
+	ts, err := lex(rin, exts)
+	if err != nil {
+		out = fmt.Sprintf("error: %s\n", err.Error())
+	} else if p, err = parse(ts, exts); err != nil {
+		out = fmt.Sprintf("error: %s\n", err.Error())
+	} else if out, err = testFormat(p, 0); err != nil {
+		out = fmt.Sprintf("error: %s\n", err.Error())
+	} 
+	
+	if rout != out {
+		t.Fatalf("Output mismatch\n-- Expected:\n%s\n-- Got:\n%s", rout, out)
+	}
+}
+
+func TestConformance(t *testing.T) {
+	cases, err := getCases(t)
+	if err != nil {
+		t.Fatalf("Failed to get test cases: %v", err)
+	}
+
 	for i, c := range cases {
 		t.Logf("Test case %d\nconfetti/tests/suite/%s.conf", i+1, c.Name)
-		runTest(t, c)
+		runConformanceTest(c, t)
+	}
+}
+
+func runReformatTest(c *TestCase, t *testing.T) {
+	rin, exts := *c.Input, c.Extensions
+
+	var out string
+
+	ts, err := lex(rin, exts)
+	if err != nil {
+		t.Fatal(err)
+	} else if out, err = testReformat(ts); err != nil {
+		t.Fatal(err)
+	} else if rin != out {
+		t.Fatalf("Output mismatch\n-- Expected:\n%s\n-- Got:\n%s", rin, out)
+	}
+}
+
+func TestReformat(t *testing.T) {
+	cases, err := getCases(t)
+	if err != nil {
+		t.Fatalf("Failed to get test cases: %v", err)
+	}
+
+	for i, c := range cases {
+		if strings.HasPrefix(*c.Output, "error:") {
+			continue
+		}
+		t.Logf("Test case %d\nconfetti/tests/suite/%s.conf", i+1, c.Name)
+		runReformatTest(c, t)
 	}
 }

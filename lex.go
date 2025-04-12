@@ -78,7 +78,10 @@ func (s *Stream) next(n int) rune {
 type TokenType uint8
 
 const (
-	TokArgument TokenType = iota
+	TokUnicode TokenType = iota
+	Tok0qArgument
+	Tok1qArgument
+	Tok3qArgument
 	TokNewline
 	TokLineContinuation
 	TokWhitespace
@@ -89,8 +92,8 @@ const (
 )
 
 type Token struct {
-	Type    TokenType
-	Content string
+	Type        TokenType
+	Content, Og string
 }
 
 // A directive “argument” shall be a sequence of one or more characters from the argument character set. The argument character set shall consist of any Unicode scalar value excluding characters from the white space, line terminator, reserved punctuator, and forbidden character sets.
@@ -112,31 +115,31 @@ var (
 	errUnclosedQuoted   = errors.New("unclosed quoted")
 )
 
-func checkEscape(s *Stream, c rune, quoted uint8) (r rune, err error) {
+func checkEscape(s *Stream, c rune, quoted uint8) (r rune, escaped bool, err error) {
 	if c != '\\' {
-		return c, nil
+		return c, false, nil
 	}
 
 	s.pos++
 	if c, err = s.current(); err != nil {
 		if errors.Is(err, errForbidden) {
-			return 0, errIllegalEscape
+			return 0, false, errIllegalEscape
 		} else if quoted > 0 {
-			return 0, errIncompleteEscape
+			return 0, false, errIncompleteEscape
 		}
-		return 0, errIllegalEscape
+		return 0, false, errIllegalEscape
 	} else if isWhitespace(c) || isLineTerminator(c) {
 		if quoted == 3 {
 			if isLineTerminator(c) {
-				return 0, errIncompleteEscape
+				return 0, false, errIncompleteEscape
 			}
-			return 0, errIllegalEscape
+			return 0, false, errIllegalEscape
 		} else if quoted == 0 || quoted == 1 && !isLineTerminator(c) {
-			return 0, errIllegalEscape
+			return 0, false, errIllegalEscape
 		}
-		return // r = 0 used to signify line terminator
+		return 0, true, nil // r = 0 used to signify line terminator
 	}
-	return c, nil
+	return c, true, nil
 }
 
 func getPunctuator(s *Stream, ps string) (l int) {
@@ -166,83 +169,120 @@ func getPunctuator(s *Stream, ps string) (l int) {
 	return 0
 }
 
-func lexUnquotedArgument(s *Stream, exts Extensions) (arg []rune, err error) {
+func lex0qArgument(s *Stream, exts Extensions) (arg, ogarg []rune, err error) {
 	for s.reading() {
 		c, err := s.current()
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		} else if !argumentOk(c, exts) || exts.Has("punctuator_arguments") && getPunctuator(s, exts["punctuator_arguments"]) != 0 {
-			return arg, nil
-		} else if c, err = checkEscape(s, c, 0); err != nil {
-			return nil, err
+			return arg, ogarg, nil
 		}
 
-		arg = append(arg, c)
+		ec, escd, err := checkEscape(s, c, 0)
+		if err != nil {
+			return nil, nil, err
+		} else if escd {
+			ogarg = append(ogarg, '\\')
+		}
+
+		arg = append(arg, ec)
+		ogarg = append(ogarg, ec)
 		s.pos++
 	}
 
 	return
 }
 
-func lexQuotedArgument(s *Stream) (arg []rune, err error) {
+func lex1qArgument(s *Stream) (arg, ogarg []rune, err error) {
 	for s.reading() {
-		if c, err := s.current(); errors.Is(err, errForbidden) {
-			return nil, errForbidden
+		c, err := s.current()
+		if errors.Is(err, errForbidden) {
+			return nil, nil, errForbidden
 		} else if !quotedArgumentOk(c) {
 			if c != '"' {
-				return nil, errUnclosedQuoted
+				return nil, nil, errUnclosedQuoted
 			}
 
 			s.pos++
-			return arg, nil
-		} else if c, err = checkEscape(s, c, 1); err != nil {
-			return nil, err
-		} else if c > 0 { // escaped line terminators allowed in quoted arguments
-			arg = append(arg, c)
+			return arg, ogarg, nil
 		}
 
+		ec, escd, err := checkEscape(s, c, 1)
+		if err != nil {
+			return nil, nil, err
+		} else if escd {
+			ogarg = append(ogarg, '\\')
+		}
+
+		if ec == 0 { // escaped line terminators allowed in quoted arguments
+			nc, _ := s.current()
+			ogarg = append(ogarg, nc)
+		} else {
+			arg = append(arg, ec)
+			ogarg = append(ogarg, ec)
+		}
 		s.pos++
 	}
 
-	return nil, errUnclosedQuoted
+	return nil, nil, errUnclosedQuoted
 }
 
-func lexTripleQuotedArgument(s *Stream) (arg []rune, err error) {
+func lex3qArgument(s *Stream) (arg, ogarg []rune, err error) {
 	for endsMatched := 0; s.reading(); {
 		c, err := s.current()
 		if errors.Is(err, errForbidden) {
-			return nil, errForbidden
+			return nil, nil, errForbidden
 		} else if !tripleQuotedArgumentOk(c) {
 			if c != '"' {
-				return nil, errUnclosedQuoted
+				return nil, nil, errUnclosedQuoted
 			}
-
+			
+			ogarg = append(ogarg, c)
 			s.pos++
 
 			endsMatched++
 			if endsMatched != 3 {
 				continue
 			}
-			return arg, nil
+			return arg, ogarg[:len(ogarg)-3], nil
 		} else if endsMatched > 0 {
 			arg = append(arg, slices.Repeat([]rune{'"'}, endsMatched)...)
 			endsMatched = 0
 			continue
-		} else if c, err = checkEscape(s, c, 3); err != nil {
-			return nil, err
 		}
 
-		arg = append(arg, c)
+		ec, escd, err := checkEscape(s, c, 3)
+		if err != nil {
+			return nil, nil, err
+		} else if escd {
+			ogarg = append(ogarg, '\\')
+		}
+
+		arg = append(arg, ec)
+		ogarg = append(ogarg, ec)
 		s.pos++
 	}
 
-	return nil, errUnclosedQuoted
+	return nil, nil, errUnclosedQuoted
 }
 
 func lex(src string, exts Extensions) (p []Token, err error) {
-	src = strings.TrimPrefix(src, "\uFEFF") // remove BOMs
-	src = strings.TrimPrefix(src, "\uFFFE")
-	src = strings.TrimSuffix(src, "\u001a") // remove end ^Z
+	// remove BOMs
+	if strings.HasPrefix(src, "\uFEFF") {
+		p = append(p, Token{Type: TokUnicode, Content: "\uFEFF"})
+		src = src[3:]
+	} else if strings.HasPrefix(src, "\uFFFE") {
+		p = append(p, Token{Type: TokUnicode, Content: "\uFFFE"})
+		src = src[3:]
+	}
+
+	// remove ^Z
+	if strings.HasSuffix(src, "\u001a") {
+		defer func() {
+			p = append(p, Token{Type: TokUnicode, Content: "\u001a"})
+		}()
+		src = src[:len(src)-1]
+	}
 
 	if !utf8.ValidString(src) {
 		return nil, errors.New("malformed UTF-8")
@@ -256,16 +296,14 @@ func lex(src string, exts Extensions) (p []Token, err error) {
 			break
 		}
 
-		// fmt.Printf("lex: %q\n", c)
-
 		switch op := s.pos; {
 		case isLineTerminator(c):
 			s.pos++
-			p = append(p, Token{Type: TokNewline})
+			p = append(p, Token{Type: TokNewline, Content: string(c)})
 
 		case isWhitespace(c):
 			s.pos++
-			p = append(p, Token{Type: TokWhitespace})
+			p = append(p, Token{Type: TokWhitespace, Content: string(c)})
 
 		case exts.Has("c_style_comments") && c == '/' && s.next(1) == '/': // C-style comment
 			for s.pos += 2; ; s.pos++ {
@@ -275,7 +313,8 @@ func lex(src string, exts Extensions) (p []Token, err error) {
 					break
 				}
 			}
-			p = append(p, Token{Type: TokComment, Content: string(s.src[op+2 : s.pos])})
+			content := string(s.src[op+2 : s.pos])
+			p = append(p, Token{Type: TokComment, Content: content, Og: "//" + content})
 
 		case c == '#': // comment until end of line
 			for s.pos++; ; s.pos++ {
@@ -285,7 +324,8 @@ func lex(src string, exts Extensions) (p []Token, err error) {
 					break
 				}
 			}
-			p = append(p, Token{Type: TokComment, Content: string(s.src[op+1 : s.pos])})
+			content := string(s.src[op+1 : s.pos])
+			p = append(p, Token{Type: TokComment, Content: content, Og: "#" + content})
 
 		case exts.Has("c_style_comments") && c == '/' && s.next(1) == '*': // block comment
 			for s.pos += 2; ; s.pos++ {
@@ -297,7 +337,8 @@ func lex(src string, exts Extensions) (p []Token, err error) {
 					break
 				}
 			}
-			p = append(p, Token{Type: TokComment, Content: string(s.src[op+2 : s.pos])})
+			content := string(s.src[op+2 : s.pos])
+			p = append(p, Token{Type: TokComment, Content: content, Og: "/*" + content + "*/"})
 			s.pos += 2 // */
 
 		case c == ';':
@@ -333,36 +374,38 @@ func lex(src string, exts Extensions) (p []Token, err error) {
 					depth--
 				}
 			}
-			p = append(p, Token{Type: TokArgument, Content: string(s.src[op+1 : s.pos])})
+			content := string(s.src[op+1 : s.pos])
+			p = append(p, Token{Type: Tok0qArgument, Content: content, Og: "(" + content + ")"})
 			s.pos++
 
 		case exts.Has("punctuator_arguments") && getPunctuator(&s, exts["punctuator_arguments"]) != 0:
 			// read punctuator as argument
 			s.pos += getPunctuator(&s, exts["punctuator_arguments"])
-			p = append(p, Token{Type: TokArgument, Content: string(s.src[op:s.pos])})
+			content := string(s.src[op:s.pos])
+			p = append(p, Token{Type: Tok0qArgument, Content: content, Og: content})
 
 		case c == '"' && s.next(1) == '"' && s.next(2) == '"': // triple quoted argument
 			s.pos += 3
-			arg, err := lexTripleQuotedArgument(&s)
+			arg, ogarg, err := lex3qArgument(&s)
 			if err != nil {
 				return nil, err
 			}
-			p = append(p, Token{Type: TokArgument, Content: string(arg)})
+			p = append(p, Token{Type: Tok3qArgument, Content: string(arg), Og: string(ogarg)})
 
 		case c == '"': // quoted argument
 			s.pos++
-			arg, err := lexQuotedArgument(&s)
+			arg, ogarg, err := lex1qArgument(&s)
 			if err != nil {
 				return nil, err
 			}
-			p = append(p, Token{Type: TokArgument, Content: string(arg)})
+			p = append(p, Token{Type: Tok1qArgument, Content: string(arg), Og: string(ogarg)})
 
 		default: // unquoted argument
-			arg, err := lexUnquotedArgument(&s, exts)
+			arg, ogarg, err := lex0qArgument(&s, exts)
 			if err != nil {
 				return nil, err
 			}
-			p = append(p, Token{Type: TokArgument, Content: string(arg)})
+			p = append(p, Token{Type: Tok0qArgument, Content: string(arg), Og: string(ogarg)})
 		}
 	}
 
