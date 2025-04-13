@@ -1,4 +1,4 @@
-package main
+package confetti
 
 import (
 	"fmt"
@@ -9,19 +9,19 @@ import (
 
 const testsDir = "./confetti/tests/suite"
 
-type TestCase struct {
+type testCase struct {
 	Name          string
 	Input, Output *string
 	Extensions    Extensions
 }
 
-func getCases(t *testing.T) (cases []*TestCase, err error) {
+func getCases(t *testing.T) (cases []*testCase, err error) {
 	dir, err := os.ReadDir(testsDir)
 	if err != nil {
 		t.Fatalf("Failed to read tests directory: %v", err)
 	}
 
-	addTest := func(c *TestCase, n, v string) error {
+	addTest := func(c *testCase, n, v string) error {
 		// read file
 		data, err := os.ReadFile(testsDir + "/" + n + "." + v)
 		if err != nil {
@@ -39,7 +39,17 @@ func getCases(t *testing.T) (cases []*TestCase, err error) {
 			if c.Extensions == nil {
 				c.Extensions = make(Extensions, 1)
 			}
-			c.Extensions[v[4:]] = strdata
+
+			switch v[4:] {
+			case "c_style_comments":
+				c.Extensions[ExtCStyleComments] = strdata
+			case "expression_arguments":
+				c.Extensions[ExtExpressionArguments] = strdata
+			case "punctuator_arguments":
+				c.Extensions[ExtPunctuatorArguments] = strdata
+			default:
+				return fmt.Errorf("unknown extension %s", v[4:])
+			}
 		default:
 			return fmt.Errorf("unknown file type %s", v)
 		}
@@ -64,7 +74,7 @@ func getCases(t *testing.T) (cases []*TestCase, err error) {
 		}
 
 		if !found {
-			c := &TestCase{Name: n}
+			c := &testCase{Name: n}
 			if err = addTest(c, n, v); err != nil {
 				return
 			}
@@ -83,21 +93,19 @@ func getCases(t *testing.T) (cases []*TestCase, err error) {
 	return
 }
 
-func runConformanceTest(c *TestCase, t *testing.T) {
+func runConformanceTest(c *testCase, t *testing.T) {
 	rin, rout, exts := *c.Input, *c.Output, c.Extensions
 
 	var p []Directive
 	var out string
 
-	ts, err := lex(rin, exts)
+	p, err := Load(rin, exts)
 	if err != nil {
-		out = fmt.Sprintf("error: %s\n", err.Error())
-	} else if p, err = parse(ts, exts); err != nil {
-		out = fmt.Sprintf("error: %s\n", err.Error())
+		out = err.Error() + "\n"
 	} else if out, err = testFormat(p, 0); err != nil {
 		out = fmt.Sprintf("error: %s\n", err.Error())
-	} 
-	
+	}
+
 	if rout != out {
 		t.Fatalf("Output mismatch\n-- Expected:\n%s\n-- Got:\n%s", rout, out)
 	}
@@ -115,7 +123,7 @@ func TestConformance(t *testing.T) {
 	}
 }
 
-func runReformatTest(c *TestCase, t *testing.T) {
+func runReformatTest(c *testCase, t *testing.T) {
 	rin, exts := *c.Input, c.Extensions
 
 	var out string

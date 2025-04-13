@@ -1,43 +1,43 @@
-package main
+package confetti
 
 import "strings"
 
-func testReformat(ts []Token) (string, error) {
+func testReformat(ts []token) (string, error) {
 	var b strings.Builder
 
 	for _, t := range ts {
 		switch t.Type {
-		case TokUnicode:
+		case tokUnicode:
 			b.WriteString(t.Content)
 
-		case Tok0qArgument:
+		case tok0qArgument:
 			b.WriteString(t.Og)
 
-		case Tok1qArgument:
+		case tok1qArgument:
 			b.WriteString("\"" + t.Og + "\"")
 
-		case Tok3qArgument:
+		case tok3qArgument:
 			b.WriteString("\"\"\"" + t.Og + "\"\"\"")
 
-		case TokNewline:
+		case tokNewline:
 			b.WriteString(t.Content)
 
-		case TokLineContinuation:
+		case tokLineContinuation:
 			b.WriteString("\\\n")
 
-		case TokWhitespace:
+		case tokWhitespace:
 			b.WriteString(t.Content)
 
-		case TokComment:
+		case tokComment:
 			b.WriteString(t.Og)
 
-		case TokSemicolon:
+		case tokSemicolon:
 			b.WriteByte(';')
 
-		case TokOpenBrace:
+		case tokOpenBrace:
 			b.WriteByte('{')
 
-		case TokCloseBrace:
+		case tokCloseBrace:
 			b.WriteByte('}')
 		}
 	}

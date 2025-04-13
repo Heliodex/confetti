@@ -1,4 +1,4 @@
-package main
+package confetti
 
 import (
 	"errors"
@@ -13,7 +13,29 @@ type Directive struct {
 	Subdirectives []Directive
 }
 
-func parse(ts []Token, exts Extensions) (p []Directive, err error) {
+func (d Directive) Equals(other Directive) (eq bool) {
+	if len(d.Arguments) != len(other.Arguments) {
+		return
+	}
+	for i, arg := range d.Arguments {
+		if arg != other.Arguments[i] {
+			return
+		}
+	}
+
+	if len(d.Subdirectives) != len(other.Subdirectives) {
+		return
+	}
+	for i, sub := range d.Subdirectives {
+		if !sub.Equals(other.Subdirectives[i]) {
+			return
+		}
+	}
+
+	return true
+}
+
+func parse(ts []token, exts Extensions) (p []Directive, err error) {
 	var current Directive
 	push := func() {
 		if current.Arguments == nil {
@@ -23,9 +45,9 @@ func parse(ts []Token, exts Extensions) (p []Directive, err error) {
 		current = Directive{}
 	}
 
-	prevSignificant := func(i int) (prev TokenType) {
+	prevSignificant := func(i int) (prev tokenType) {
 		for i--; i > 0; i-- {
-			if prev = ts[i].Type; prev != TokWhitespace && prev != TokComment {
+			if prev = ts[i].Type; prev != tokWhitespace && prev != tokComment {
 				return
 			}
 		}
@@ -34,20 +56,20 @@ func parse(ts []Token, exts Extensions) (p []Directive, err error) {
 
 	for i := 0; i < len(ts); i++ {
 		switch t := ts[i]; t.Type {
-		case Tok0qArgument, Tok1qArgument, Tok3qArgument:
+		case tok0qArgument, tok1qArgument, tok3qArgument:
 			current.Arguments = append(current.Arguments, t.Content)
 
-		case TokSemicolon: // end of directive
-			if prev := prevSignificant(i); prev == TokSemicolon || prev == TokNewline || prev == TokLineContinuation {
+		case tokSemicolon: // end of directive
+			if prev := prevSignificant(i); prev == tokSemicolon || prev == tokNewline || prev == tokLineContinuation {
 				return nil, errors.New("unexpected ';'")
 			}
 			fallthrough
 
-		case TokNewline: // end of directive
+		case tokNewline: // end of directive
 			push()
 
-		case TokOpenBrace:
-			if i == len(ts)-1 || prevSignificant(i) == TokSemicolon {
+		case tokOpenBrace:
+			if i == len(ts)-1 || prevSignificant(i) == tokSemicolon {
 				// fmt.Println(prevNonWhitespace(i).Type == TokSemicolon)
 				return nil, fmt.Errorf("unexpected '{'")
 			}
@@ -57,9 +79,9 @@ func parse(ts []Token, exts Extensions) (p []Directive, err error) {
 			si := i
 			for depth := 0; i < len(ts); i++ {
 				// escapes should be dealt with in lexer
-				if t = ts[i]; t.Type == TokOpenBrace {
+				if t = ts[i]; t.Type == tokOpenBrace {
 					depth++
-				} else if t.Type == TokCloseBrace {
+				} else if t.Type == tokCloseBrace {
 					if depth == 0 {
 						break
 					}
@@ -81,10 +103,10 @@ func parse(ts []Token, exts Extensions) (p []Directive, err error) {
 			current.Subdirectives = subp
 			push()
 
-		case TokCloseBrace:
+		case tokCloseBrace:
 			return nil, errors.New("found '}' without matching '{'")
 
-		case TokLineContinuation:
+		case tokLineContinuation:
 			if current.Arguments == nil {
 				return nil, fmt.Errorf("unexpected line continuation")
 			}

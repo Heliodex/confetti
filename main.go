@@ -1,66 +1,34 @@
 // package confetti-go implements the Confetti configuration language.
-package main
+package confetti
 
-import (
-	"fmt"
-	"strings"
+import "fmt"
+
+type extension uint8
+
+const (
+	_ extension = iota
+	ExtCStyleComments
+	ExtExpressionArguments
+	ExtPunctuatorArguments
 )
 
-type Extensions map[string]string
+type Extensions map[extension]string
 
-func (e Extensions) Has(name string) bool {
-	_, ok := e[name]
+func (e Extensions) Has(ext extension) bool {
+	_, ok := e[ext]
 	return ok
 }
 
-var extensions = Extensions{
-	"c_style_comments": "",
-	"expression_arguments":  "",
-	// "punctuator_arguments": "",
-}
-
-const text = `foo
-{
-    bar
-}
-;
-baz`
-
-func printDirective(d Directive, depth int) {
-	prefix := strings.Repeat("  ", depth)
-
-	fmt.Println(prefix + "Directive:")
-	for _, arg := range d.Arguments {
-		fmt.Printf(prefix+"  %q\n", arg)
-	}
-	for _, sub := range d.Subdirectives {
-		printDirective(sub, depth+1)
-	}
-}
-
-func main() {
-	fmt.Println("Lexing")
-
-	ts, err := lex(text, extensions)
+func Load(conf string, exts Extensions) ([]Directive, error) {
+	ts, err := lex(conf, exts)
 	if err != nil {
-		panic(err)
+		return nil, fmt.Errorf("error: %w", err)
 	}
 
-	fmt.Println("Parsing")
-
-	// for _, t := range ts {
-	// 	if t.Type == TokWhitespace {
-	// 		continue
-	// 	}
-	// 	fmt.Printf("%14s  %s\n", t.Type, t.Content)
-	// }
-
-	p, err := parse(ts, extensions)
+	p, err := parse(ts, exts)
 	if err != nil {
-		panic(err)
+		return nil, fmt.Errorf("error: %w", err)
 	}
 
-	for _, d := range p {
-		printDirective(d, 0)
-	}
+	return p, nil
 }
