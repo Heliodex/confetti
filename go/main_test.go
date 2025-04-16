@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-const testsDir = "./confetti/tests/suite"
+const testsDir = "../confetti/tests/suite"
 
 type testCase struct {
 	Name          string

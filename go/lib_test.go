@@ -66,8 +66,6 @@ func TestLibrary(t *testing.T) {
 			t.Fatalf("Failed to load configuration: %v", err)
 		}
 
-		fmt.Println(dirs)
-
 		for i, d := range dirs {
 			fmt.Printf("Directive %d:\n", i)
 			printDirective(d, 0)

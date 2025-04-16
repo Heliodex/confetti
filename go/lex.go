@@ -9,10 +9,10 @@ import (
 	"unicode/utf8"
 )
 
-var lineTerminators = [...]rune{'\r', '\n', '\u000a', '\u000b', '\u000c', '\u000d', '\u0085', '\u2028', '\u2029'}
+var lineTerminators = []rune{'\r', '\n', '\u000a', '\u000b', '\u000c', '\u000d', '\u0085', '\u2028', '\u2029'}
 
 func isLineTerminator(r rune) bool {
-	return slices.Contains(lineTerminators[:], r)
+	return slices.Contains(lineTerminators, r)
 }
 
 // all unicode chars with whitespace property
@@ -30,10 +30,10 @@ func isForbidden(r rune) bool {
 	return unicode.Is(unicode.Cc, r) && !isLineTerminator(r) && !isWhitespace(r) || unicode.Is(unicode.Cs, r) || r > 0x10FFFF || isUnassigned(r)
 }
 
-var reserved = [...]rune{'"', '#', ';', '{', '}'}
+var reserved = []rune{'"', '#', ';', '{', '}'}
 
 func isReserved(r rune, exts Extensions) bool {
-	return slices.Contains(reserved[:], r) || exts.Has(ExtExpressionArguments) && r == '('
+	return slices.Contains(reserved, r) || exts.Has(ExtExpressionArguments) && r == '('
 }
 
 type stream struct {
