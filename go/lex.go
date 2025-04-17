@@ -130,12 +130,10 @@ func checkEscape(s *stream, c rune, quoted uint8) (r rune, escaped bool, err err
 
 	s.increment(1)
 	if c, err = s.current(); err != nil {
-		if errors.Is(err, errForbidden) {
+		if errors.Is(err, errForbidden) || quoted == 0 {
 			return 0, false, errIllegalEscape
-		} else if quoted > 0 {
-			return 0, false, errIncompleteEscape
 		}
-		return 0, false, errIllegalEscape
+		return 0, false, errIncompleteEscape
 	} else if isWhitespace(c) || isLineTerminator(c) {
 		if quoted == 3 {
 			if isLineTerminator(c) {
@@ -160,20 +158,14 @@ func getPunctuator(s *stream, ps string) (l int) {
 	slices.SortFunc(puncts, func(a, b string) int {
 		return len([]rune(b)) - len([]rune(a)) // footgun: len() counts bytes for strings
 	})
-	// fmt.Printf("punctuators: %q\n", puncts)
 
 	for _, p := range puncts {
 		rest := s.src[s.pos:]
-
-		rp := []rune(p)
-		l = len(rp)
-		// fmt.Printf("%q %d\n", p, l)
-		if l <= len(rest) && string(rest[:l]) == p {
-			// fmt.Printf("punctuator: %q\n", p)
+		if l = len([]rune(p)); l <= len(rest) && string(rest[:l]) == p {
 			return
 		}
 	}
-	// fmt.Printf("not a punctuator: %q\n", s.src[s.pos:])
+
 	return 0
 }
 
@@ -182,7 +174,9 @@ func lex0qArgument(s *stream, exts Extensions) (arg, ogarg []rune, err error) {
 		c, err := s.current()
 		if err != nil {
 			return nil, nil, err
-		} else if !argumentOk(c, exts) || exts.Has(ExtPunctuatorArguments) && getPunctuator(s, exts[ExtPunctuatorArguments]) != 0 {
+		} else if !argumentOk(c, exts) ||
+			(exts.Has(ExtPunctuatorArguments) &&
+				getPunctuator(s, exts[ExtPunctuatorArguments]) != 0) {
 			return arg, ogarg, nil
 		}
 
@@ -202,7 +196,7 @@ func lex0qArgument(s *stream, exts Extensions) (arg, ogarg []rune, err error) {
 }
 
 func lex1qArgument(s *stream) (arg, ogarg []rune, err error) {
-	for s.reading() {
+	for ; s.reading(); s.increment(1) {
 		c, err := s.current()
 		if errors.Is(err, errForbidden) {
 			return nil, nil, errForbidden
@@ -222,14 +216,14 @@ func lex1qArgument(s *stream) (arg, ogarg []rune, err error) {
 			ogarg = append(ogarg, '\\')
 		}
 
-		if ec == 0 { // escaped line terminators allowed in quoted arguments
+		if ec == 0 {
+			// escaped line terminators allowed in quoted arguments
 			nc, _ := s.current()
 			ogarg = append(ogarg, nc)
-		} else {
-			arg = append(arg, ec)
-			ogarg = append(ogarg, ec)
+			continue
 		}
-		s.increment(1)
+		arg = append(arg, ec)
+		ogarg = append(ogarg, ec)
 	}
 
 	return nil, nil, errUnclosedQuoted
@@ -248,11 +242,11 @@ func lex3qArgument(s *stream) (arg, ogarg []rune, err error) {
 			ogarg = append(ogarg, c)
 			s.increment(1)
 
-			endsMatched++
-			if endsMatched != 3 {
-				continue
+			if endsMatched == 2 {
+				return arg, ogarg[:len(ogarg)-3], nil
 			}
-			return arg, ogarg[:len(ogarg)-3], nil
+			endsMatched++
+			continue
 		} else if endsMatched > 0 {
 			arg = append(arg, slices.Repeat([]rune{'"'}, endsMatched)...)
 			endsMatched = 0

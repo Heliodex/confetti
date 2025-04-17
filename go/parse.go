@@ -70,7 +70,6 @@ func parse(ts []token, exts Extensions) (p []Directive, err error) {
 
 		case tokOpenBrace:
 			if i == len(ts)-1 || prevSignificant(i) == tokSemicolon {
-				// fmt.Println(prevNonWhitespace(i).Type == TokSemicolon)
 				return nil, fmt.Errorf("unexpected '{'")
 			}
 
