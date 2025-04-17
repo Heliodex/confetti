@@ -1,7 +1,6 @@
 import { expect, test } from "bun:test"
 import { readdirSync } from "node:fs"
 import Load, { type Extensions } from "./main"
-import type { Directive } from "./parse"
 import { testFormat } from "./testformat"
 
 const testsDir = "../confetti/tests/suite"
