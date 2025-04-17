@@ -2,7 +2,7 @@ package confetti
 
 import "strings"
 
-func testFormat(p []Directive, depth int) (string, error) {
+func testFormat(p []Directive, depth int) string {
 	var b strings.Builder
 
 	indent := strings.Repeat("    ", depth)
@@ -21,14 +21,8 @@ func testFormat(p []Directive, depth int) (string, error) {
 			continue
 		}
 
-		b.WriteString(" [\n")
-		subdirs, err := testFormat(d.Subdirectives, depth+1)
-		if err != nil {
-			return "", err
-		}
-
-		b.WriteString(subdirs + indent + "]\n")
+		b.WriteString(" [\n" + testFormat(d.Subdirectives, depth+1) + indent + "]\n")
 	}
 
-	return b.String(), nil
+	return b.String()
 }

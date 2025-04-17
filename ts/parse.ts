@@ -2,21 +2,21 @@ import type { token } from "./lex"
 import type { Extensions } from "./main"
 
 export type Directive = {
-	arguments: string[]
-	subdirectives: Directive[]
+	Arguments: string[]
+	Subdirectives: Directive[]
 }
 
 function isEqual(a: Directive, b: Directive): boolean {
-	if (a.arguments.length !== b.arguments.length) return false
+	if (a.Arguments.length !== b.Arguments.length) return false
 
-	for (let i = 0; i < a.arguments.length; i++)
-		if (a.arguments[i] !== b.arguments[i]) return false
+	for (let i = 0; i < a.Arguments.length; i++)
+		if (a.Arguments[i] !== b.Arguments[i]) return false
 
-	if (a.subdirectives.length !== b.subdirectives.length) return false
+	if (a.Subdirectives.length !== b.Subdirectives.length) return false
 
-	for (let i = 0; i < a.subdirectives.length; i++) {
-		const subA = a.subdirectives[i]
-		const subB = b.subdirectives[i]
+	for (let i = 0; i < a.Subdirectives.length; i++) {
+		const subA = a.Subdirectives[i]
+		const subB = b.Subdirectives[i]
 		if (!(subA && subB && isEqual(subA, subB))) return false
 	}
 

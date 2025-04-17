@@ -57,29 +57,26 @@ func getCases(t *testing.T) (cases []*testCase, err error) {
 		return nil
 	}
 
+dirloop:
 	for _, entry := range dir {
 		split := strings.Split(entry.Name(), ".")
 		n, v := split[0], split[1]
 
 		// search for the test case with the same name
-		var found bool
 		for _, c := range cases {
-			if c.Name == n {
-				if err = addTest(c, n, v); err != nil {
-					return
-				}
-				found = true
-				break
-			}
-		}
-
-		if !found {
-			c := &testCase{Name: n}
-			if err = addTest(c, n, v); err != nil {
+			if c.Name != n {
+				continue
+			} else if err = addTest(c, n, v); err != nil {
 				return
 			}
-			cases = append(cases, c)
+			continue dirloop
 		}
+
+		c := &testCase{Name: n}
+		if err = addTest(c, n, v); err != nil {
+			return
+		}
+		cases = append(cases, c)
 	}
 
 	for _, c := range cases {
@@ -96,14 +93,11 @@ func getCases(t *testing.T) (cases []*testCase, err error) {
 func runConformanceTest(c *testCase, t *testing.T) {
 	rin, rout, exts := *c.Input, *c.Output, c.Extensions
 
-	var p []Directive
 	var out string
-
-	p, err := Load(rin, exts)
-	if err != nil {
+	if p, err := Load(rin, exts); err != nil {
 		out = err.Error() + "\n"
-	} else if out, err = testFormat(p, 0); err != nil {
-		out = fmt.Sprintf("error: %s\n", err.Error())
+	} else {
+		out = testFormat(p, 0)
 	}
 
 	if rout != out {

@@ -264,20 +264,20 @@ func lex3qArgument(s *stream) (arg, ogarg []rune, err error) {
 	return nil, nil, errUnclosedQuoted
 }
 
-func lex(src string, exts Extensions) (p []token, err error) {
+func lex(src string, exts Extensions) (ts []token, err error) {
 	// remove BOMs
 	if strings.HasPrefix(src, "\uFEFF") {
-		p = append(p, token{Type: tokUnicode, Content: "\uFEFF"})
+		ts = append(ts, token{Type: tokUnicode, Content: "\uFEFF"})
 		src = src[3:]
 	} else if strings.HasPrefix(src, "\uFFFE") {
-		p = append(p, token{Type: tokUnicode, Content: "\uFFFE"})
+		ts = append(ts, token{Type: tokUnicode, Content: "\uFFFE"})
 		src = src[3:]
 	}
 
 	// remove ^Z
 	if strings.HasSuffix(src, "\u001a") {
 		defer func() {
-			p = append(p, token{Type: tokUnicode, Content: "\u001a"})
+			ts = append(ts, token{Type: tokUnicode, Content: "\u001a"})
 		}()
 		src = src[:len(src)-1]
 	}
@@ -297,11 +297,11 @@ func lex(src string, exts Extensions) (p []token, err error) {
 		switch op := s.pos; {
 		case isLineTerminator(c):
 			s.pos++
-			p = append(p, token{Type: tokNewline, Content: string(c)})
+			ts = append(ts, token{Type: tokNewline, Content: string(c)})
 
 		case isWhitespace(c):
 			s.pos++
-			p = append(p, token{Type: tokWhitespace, Content: string(c)})
+			ts = append(ts, token{Type: tokWhitespace, Content: string(c)})
 
 		case exts.Has(ExtCStyleComments) && c == '/' && s.next(1) == '/': // C-style comment
 			for s.pos += 2; ; s.pos++ {
@@ -312,7 +312,7 @@ func lex(src string, exts Extensions) (p []token, err error) {
 				}
 			}
 			content := string(s.src[op+2 : s.pos])
-			p = append(p, token{Type: tokComment, Content: content, Og: "//" + content})
+			ts = append(ts, token{Type: tokComment, Content: content, Og: "//" + content})
 
 		case c == '#': // comment until end of line
 			for s.pos++; ; s.pos++ {
@@ -323,7 +323,7 @@ func lex(src string, exts Extensions) (p []token, err error) {
 				}
 			}
 			content := string(s.src[op+1 : s.pos])
-			p = append(p, token{Type: tokComment, Content: content, Og: "#" + content})
+			ts = append(ts, token{Type: tokComment, Content: content, Og: "#" + content})
 
 		case exts.Has(ExtCStyleComments) && c == '/' && s.next(1) == '*': // block comment
 			for s.pos += 2; ; s.pos++ {
@@ -336,24 +336,24 @@ func lex(src string, exts Extensions) (p []token, err error) {
 				}
 			}
 			content := string(s.src[op+2 : s.pos])
-			p = append(p, token{Type: tokComment, Content: content, Og: "/*" + content + "*/"})
+			ts = append(ts, token{Type: tokComment, Content: content, Og: "/*" + content + "*/"})
 			s.pos += 2 // */
 
 		case c == ';':
 			s.pos++
-			p = append(p, token{Type: tokSemicolon})
+			ts = append(ts, token{Type: tokSemicolon})
 
 		case c == '{':
 			s.pos++
-			p = append(p, token{Type: tokOpenBrace})
+			ts = append(ts, token{Type: tokOpenBrace})
 
 		case c == '}':
 			s.pos++
-			p = append(p, token{Type: tokCloseBrace})
+			ts = append(ts, token{Type: tokCloseBrace})
 
 		case c == '\\' && isLineTerminator(s.next(1)):
 			s.pos += 2
-			p = append(p, token{Type: tokLineContinuation})
+			ts = append(ts, token{Type: tokLineContinuation})
 
 		case exts.Has(ExtExpressionArguments) && c == '(':
 			s.pos++
@@ -373,14 +373,14 @@ func lex(src string, exts Extensions) (p []token, err error) {
 				}
 			}
 			content := string(s.src[op+1 : s.pos])
-			p = append(p, token{Type: tok0qArgument, Content: content, Og: "(" + content + ")"})
+			ts = append(ts, token{Type: tok0qArgument, Content: content, Og: "(" + content + ")"})
 			s.pos++
 
 		case exts.Has(ExtPunctuatorArguments) && getPunctuator(&s, exts[ExtPunctuatorArguments]) != 0:
 			// read punctuator as argument
 			s.pos += getPunctuator(&s, exts[ExtPunctuatorArguments])
 			content := string(s.src[op:s.pos])
-			p = append(p, token{Type: tok0qArgument, Content: content, Og: content})
+			ts = append(ts, token{Type: tok0qArgument, Content: content, Og: content})
 
 		case c == '"' && s.next(1) == '"' && s.next(2) == '"': // triple quoted argument
 			s.pos += 3
@@ -388,7 +388,7 @@ func lex(src string, exts Extensions) (p []token, err error) {
 			if err != nil {
 				return nil, err
 			}
-			p = append(p, token{Type: tok3qArgument, Content: string(arg), Og: string(ogarg)})
+			ts = append(ts, token{Type: tok3qArgument, Content: string(arg), Og: string(ogarg)})
 
 		case c == '"': // quoted argument
 			s.pos++
@@ -396,14 +396,14 @@ func lex(src string, exts Extensions) (p []token, err error) {
 			if err != nil {
 				return nil, err
 			}
-			p = append(p, token{Type: tok1qArgument, Content: string(arg), Og: string(ogarg)})
+			ts = append(ts, token{Type: tok1qArgument, Content: string(arg), Og: string(ogarg)})
 
 		default: // unquoted argument
 			arg, ogarg, err := lex0qArgument(&s, exts)
 			if err != nil {
 				return nil, err
 			}
-			p = append(p, token{Type: tok0qArgument, Content: string(arg), Og: string(ogarg)})
+			ts = append(ts, token{Type: tok0qArgument, Content: string(arg), Og: string(ogarg)})
 		}
 	}
 
