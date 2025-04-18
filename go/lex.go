@@ -140,7 +140,7 @@ func checkEscape(s *stream, c rune, quoted uint8) (r rune, escaped bool, err err
 				return 0, false, errIncompleteEscape
 			}
 			return 0, false, errIllegalEscape
-		} else if quoted == 0 || quoted == 1 && !isLineTerminator(c) {
+		} else if quoted == 0 || (quoted == 1 && !isLineTerminator(c)) {
 			return 0, false, errIllegalEscape
 		}
 		return 0, true, nil // r = 0 used to signify line terminator
@@ -390,11 +390,11 @@ func lex(src string, exts Extensions) (ts []token, err error) {
 			}
 			content := string(s.src[op+1 : s.pos])
 			ts = append(ts, token{Type: tok0qArgument, Content: content, Og: "(" + content + ")"})
-			s.increment(1)
+			s.increment(1) // )
 
 		case exts.Has(ExtPunctuatorArguments) && getPunctuator(&s, exts[ExtPunctuatorArguments]) != 0:
 			// read punctuator as argument
-			s.pos += getPunctuator(&s, exts[ExtPunctuatorArguments])
+			s.increment(getPunctuator(&s, exts[ExtPunctuatorArguments]))
 			content := string(s.src[op:s.pos])
 			ts = append(ts, token{Type: tok0qArgument, Content: content, Og: content})
 

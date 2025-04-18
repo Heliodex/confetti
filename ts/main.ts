@@ -8,9 +8,5 @@ type extension =
 
 export type Extensions = { [_ in extension]?: string }
 
-export default (conf: string, exts: Extensions = {}): Directive[] => {
-	const ts = lex(conf, exts)
-	const p = parse(ts, exts)
-
-	return p
-}
+export default (conf: string, exts: Extensions = {}): Directive[] =>
+	parse(lex(conf, exts), exts)

@@ -30,7 +30,7 @@ const isReserved = (r: number, exts: Extensions): boolean =>
 	reserved.includes(r) ||
 	("ExpressionArguments" in exts && r === 0x28) /* ( */
 
-const errForbidden = new Error("illegal character")
+const errForbidden = "illegal character"
 
 class stream {
 	src: string
@@ -44,7 +44,8 @@ class stream {
 		return this.pos < this.src.length
 	}
 
-	current(): [number, string] { // TODO: wip error type
+	current(): [number, string] {
+		// TODO: wip error type
 		const c = this.src[this.pos]
 		if (!c) return [0, "EOF"]
 
@@ -54,9 +55,9 @@ class stream {
 			if (r < 0x10000)
 				return [
 					0,
-					`${errForbidden} U+${r.toString(16).padStart(4, "0")}`,
+					`${errForbidden} U+${r.toString(16).toUpperCase().padStart(4, "0")}`,
 				]
-			return [0, `${errForbidden} U+${r.toString(16)}`]
+			return [0, `${errForbidden} U+${r.toString(16).toUpperCase()}`]
 		}
 
 		return [r, ""]
@@ -71,7 +72,7 @@ class stream {
 	}
 }
 
-type tokenType =
+export type tokenType =
 	| "Unicode"
 	| "0qArgument"
 	| "1qArgument"
@@ -86,7 +87,7 @@ type tokenType =
 
 export type token = {
 	Type: tokenType
-	Content: string
+	Content?: string
 	Og?: string
 }
 
@@ -102,14 +103,13 @@ const errIllegalEscape = new Error("illegal escape character")
 const errUnclosedQuoted = new Error("unclosed quoted")
 
 function checkEscape(s: stream, r: number, quoted: number): [string, boolean] {
-	if (r === 0x5c /* \ */) return [String.fromCharCode(r), false]
+	if (r !== 0x5c /* \ */) return [String.fromCharCode(r), false]
 
 	s.increment(1)
 	const [c, err] = s.current()
 	if (err) {
 		// find if error message starts with errForbidden
-		if (err.startsWith(errForbidden.message) || quoted === 0)
-			throw errIllegalEscape
+		if (err.startsWith(errForbidden) || quoted === 0) throw errIllegalEscape
 		throw errIncompleteEscape
 	}
 	if (isWhitespace(c) || isLineTerminator(c)) {
@@ -163,6 +163,7 @@ function lex0qArgument(s: stream, exts: Extensions): [string, string] {
 
 		arg += ec
 		ogarg += ec
+		s.increment(1)
 	}
 
 	return [arg, ogarg]
@@ -174,7 +175,7 @@ function lex1qArgument(s: stream): [string, string] {
 
 	for (; s.reading(); s.increment(1)) {
 		const [c, err] = s.current()
-		if (err.startsWith(errForbidden.message)) throw errForbidden
+		if (err.startsWith(errForbidden)) throw new Error(errForbidden)
 		if (!quotedArgumentOk(c)) {
 			if (c !== 0x22 /* " */) throw errUnclosedQuoted
 
@@ -205,7 +206,7 @@ function lex3qArgument(s: stream): [string, string] {
 	let endsMatched = 0
 	while (s.reading()) {
 		const [c, err] = s.current()
-		if (err.startsWith(errForbidden.message)) throw errForbidden
+		if (err.startsWith(errForbidden)) throw new Error(errForbidden)
 		if (!tripleQuotedArgumentOk(c)) {
 			if (c !== 0x22 /* " */) throw errUnclosedQuoted
 
@@ -233,8 +234,20 @@ function lex3qArgument(s: stream): [string, string] {
 	throw errUnclosedQuoted
 }
 
+function str2codepoints(str: string): number[] {
+	const codepoints: number[] = []
+	for (let i = 0; i < str.length; i++) {
+		const code = str.codePointAt(i)
+		if (code === undefined) continue
+		codepoints.push(code)
+		if (code > 0xffff) i++ // surrogate pair
+	}
+	return codepoints
+}
+
 export function lex(input: string, exts: Extensions): token[] {
-	if (!isUtf8(Buffer.from(input))) throw new Error("malformed UTF-8")
+	if (!isUtf8(Buffer.from(str2codepoints(input))))
+		throw new Error("malformed UTF-8")
 
 	let src = input
 	const ts: token[] = []
@@ -263,33 +276,109 @@ export function lex(input: string, exts: Extensions): token[] {
 
 		const op = s.pos
 		if (isLineTerminator(c)) {
+			s.increment(1)
+			ts.push({ Type: "Newline", Content: String.fromCharCode(c) })
 		} else if (isWhitespace(c)) {
+			s.increment(1)
+			ts.push({ Type: "Whitespace", Content: String.fromCharCode(c) })
 		} else if (
 			"CStyleComments" in exts &&
 			c === 0x2f &&
 			s.next(1) === 0x2f //
 		) {
 			// C-style comment
+			for (s.increment(1); ; ) {
+				s.increment(1)
+				const [c, err] = s.current()
+				if (err.startsWith(errForbidden)) throw new Error(errForbidden)
+				if (err || isLineTerminator(c)) break
+			}
+			const content = src.slice(op + 2, s.pos)
+			ts.push({ Type: "Comment", Content: content, Og: `#${content}` })
 		} else if (c === 0x23 /* # */) {
 			// comment until end of line
+			while (true) {
+				s.increment(1)
+				const [c, err] = s.current()
+				if (err.startsWith(errForbidden)) throw new Error(errForbidden)
+				if (err || isLineTerminator(c)) break
+			}
+			const content = src.slice(op + 1, s.pos)
+			ts.push({ Type: "Comment", Content: content, Og: `#${content}` })
 		} else if (
 			"CStyleComments" in exts &&
 			c === 0x2f &&
 			s.next(1) === 0x2a /* */
 		) {
 			// block comment
+			for (s.increment(1); ; ) {
+				s.increment(1)
+				const [c, err] = s.current()
+				if (err.startsWith(errForbidden)) throw new Error(errForbidden)
+				if (err) {
+					console.log(err)
+					throw new Error("unterminated multi-line comment")
+				}
+				if (c === 0x2a /* * */ && s.next(1) === 0x2f /* / */) break
+			}
+			const content = src.slice(op + 2, s.pos)
+			ts.push({ Type: "Comment", Content: content, Og: `/*${content}*/` })
+			s.increment(2) // */
 		} else if (c === 0x3b /* ; */) {
+			s.increment(1)
+			ts.push({ Type: "Semicolon" })
 		} else if (c === 0x7b /* { */) {
+			s.increment(1)
+			ts.push({ Type: "OpenBrace" })
 		} else if (c === 0x7d /* } */) {
+			s.increment(1)
+			ts.push({ Type: "CloseBrace" })
 		} else if (c === 0x5c /* \ */ && isLineTerminator(s.next(1))) {
+			s.increment(2)
+			ts.push({ Type: "LineContinuation" })
 		} else if ("ExpressionArguments" in exts && c === 0x28 /* ( */) {
-			// } else if ("PunctuatorArguments" in exts && ) {
+			// read until corresponding closing parenthesis
+			for (let depth = 0; ; ) {
+				s.increment(1)
+				const [c, err] = s.current()
+				if (err.startsWith(errForbidden)) throw new Error(errForbidden)
+				if (err || isLineTerminator(c))
+					throw new Error("incomplete expression")
+				if (c === 0x28 /* ( */) depth++
+				else if (c === 0x29 /* ) */) {
+					if (depth === 0) break
+					depth--
+				}
+			}
+			const content = src.slice(op + 1, s.pos)
+			ts.push({
+				Type: "0qArgument",
+				Content: content,
+				Og: `(${content})`,
+			})
+			s.increment(1) // )
+		} else if (
+			exts.PunctuatorArguments !== undefined &&
+			getPunctuator(s, exts.PunctuatorArguments) !== 0
+		) {
+			// read punctuator as argument
+			s.increment(getPunctuator(s, exts.PunctuatorArguments))
+			const content = src.slice(op, s.pos)
+			ts.push({ Type: "0qArgument", Content: content, Og: content })
 		} else if (c === 0x22 && s.next(1) === 0x22 && s.next(2) === 0x22) {
 			// triple quated argument
+			s.increment(3)
+			const [arg, ogarg] = lex3qArgument(s)
+			ts.push({ Type: "3qArgument", Content: arg, Og: ogarg })
 		} else if (c === 0x22) {
 			// quoted argument
+			s.increment(1)
+			const [arg, ogarg] = lex1qArgument(s)
+			ts.push({ Type: "1qArgument", Content: arg, Og: ogarg })
 		} else {
 			// unquoted argument
+			const [arg, ogarg] = lex0qArgument(s, exts)
+			ts.push({ Type: "0qArgument", Content: arg, Og: ogarg })
 		}
 	}
 

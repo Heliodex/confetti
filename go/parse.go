@@ -45,31 +45,31 @@ func parse(ts []token, exts Extensions) (p []Directive, err error) {
 		current = Directive{}
 	}
 
-	prevSignificant := func(i int) (prev tokenType) {
-		for i--; i > 0; i-- {
-			if prev = ts[i].Type; prev != tokWhitespace && prev != tokComment {
-				return
+	i := 0
+
+	for prevSignificant := func() tokenType {
+		for ci := i - 1; ci > 0; ci-- {
+			if prev := ts[ci].Type; prev != tokWhitespace && prev != tokComment {
+				return prev
 			}
 		}
-		return
-	}
-
-	for i := 0; i < len(ts); i++ {
+		return tokUnicode
+	}; i < len(ts); i++ {
 		switch t := ts[i]; t.Type {
 		case tok0qArgument, tok1qArgument, tok3qArgument:
 			current.Arguments = append(current.Arguments, t.Content)
 
 		case tokSemicolon: // end of directive
-			if prev := prevSignificant(i); prev == tokSemicolon || prev == tokNewline || prev == tokLineContinuation {
+			if prev := prevSignificant(); prev == tokSemicolon || prev == tokNewline || prev == tokLineContinuation {
 				return nil, errors.New("unexpected ';'")
 			}
-			fallthrough
+			push()
 
 		case tokNewline: // end of directive
 			push()
 
 		case tokOpenBrace:
-			if i == len(ts)-1 || prevSignificant(i) == tokSemicolon {
+			if i == len(ts)-1 || prevSignificant() == tokSemicolon {
 				return nil, fmt.Errorf("unexpected '{'")
 			}
 
@@ -78,9 +78,9 @@ func parse(ts []token, exts Extensions) (p []Directive, err error) {
 			si := i
 			for depth := 0; i < len(ts); i++ {
 				// escapes should be dealt with in lexer
-				if t = ts[i]; t.Type == tokOpenBrace {
+				if t2 := ts[i]; t2.Type == tokOpenBrace {
 					depth++
-				} else if t.Type == tokCloseBrace {
+				} else if t2.Type == tokCloseBrace {
 					if depth == 0 {
 						break
 					}

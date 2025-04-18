@@ -83,7 +83,8 @@ function runConformanceTest(c: testCase) {
 	try {
 		out = testFormat(Load(rin, exts), 0)
 	} catch (e) {
-		out = `${e}\n`
+		if (!(e instanceof Error)) throw e
+		out = `error: ${e.message}\n`
 	}
 
 	expect(out).toEqual(rout)
