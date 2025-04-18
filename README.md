@@ -1,3 +1,3 @@
-# confetti-go
+# confetti
 
-Package confetti-go implements the [Confetti](https://github.com/hgs3/confetti) configuration language.
+Various implementations of the [Confetti](https://github.com/hgs3/confetti) configuration language.
