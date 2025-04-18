@@ -20,13 +20,8 @@ func isWhitespace(r rune) bool {
 	return !isLineTerminator(r) && unicode.IsSpace(r)
 }
 
-// characters not in any Unicode category
-func isUnassigned(r rune) bool {
-	return r >= 0x40000 && r <= 0xeffff
-}
-
 func isControl(r rune) bool {
-	return (r <= 0x001f || r >= 0x007f && r <= 0x009f) &&
+	return (r <= 0x1f || r >= 0x7f && r <= 0x9f) &&
 		!isLineTerminator(r) &&
 		!unicode.IsSpace(r)
 }
@@ -35,9 +30,14 @@ func isSurrogate(r rune) bool {
 	return r >= 0xd800 && r <= 0xdfff
 }
 
+// characters not in any Unicode category
+func isUnassigned(r rune) bool {
+	return r >= 0x40000 && r <= 0xeffff
+}
+
 // surrogate, private use, unassigned
 func isForbidden(r rune) bool {
-	return isControl(r) || isSurrogate(r) || r > 0x10FFFF || isUnassigned(r)
+	return isControl(r) || isSurrogate(r) || r > 0x10ffff || isUnassigned(r)
 }
 
 var reserved = []rune{'"', '#', ';', '{', '}'}

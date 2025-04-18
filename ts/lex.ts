@@ -1,23 +1,24 @@
-import { isUtf8 } from "node:buffer"
 import type { Extensions } from "./main"
 
 const lineTerminators = [0x0a, 0x0b, 0x0c, 0x0d, 0x85, 0x2028, 0x2029]
 
 const isLineTerminator = (r: number): boolean => lineTerminators.includes(r)
 
-const whitespaceRegex = /[\s]/
+const whitespaceRegex = /\s/
 
 // all unicode chars with whitespace property
 const isWhitespace = (r: number): boolean =>
 	!isLineTerminator(r) && whitespaceRegex.test(String.fromCharCode(r))
 
-// characters not in any Unicode category
-const isUnassigned = (r: number): boolean => r >= 0x40000 && r <= 0xeffff
 const isControl = (r: number): boolean =>
 	(r <= 0x1f || (r >= 0x7f && r <= 0x9f)) &&
 	!isLineTerminator(r) &&
 	!whitespaceRegex.test(String.fromCharCode(r))
+
 const isSurrogate = (r: number): boolean => r >= 0xd800 && r <= 0xdfff
+
+// characters not in any Unicode category
+const isUnassigned = (r: number): boolean => r >= 0x40000 && r <= 0xeffff
 
 // surrogate, private use, unassigned
 const isForbidden = (r: number): boolean =>
@@ -46,10 +47,9 @@ class stream {
 
 	current(): [number, string] {
 		// TODO: wip error type
-		const c = this.src[this.pos]
-		if (!c) return [0, "EOF"]
+		const r = this.src.charCodeAt(this.pos)
+		if (Number.isNaN(r)) return [0, "EOF"]
 
-		const r = c.charCodeAt(0)
 		if (isForbidden(r)) {
 			// get illegal character as U+XXXX
 			if (r < 0x10000)
@@ -246,7 +246,8 @@ function str2codepoints(str: string): number[] {
 }
 
 export function lex(input: string, exts: Extensions): token[] {
-	if (!isUtf8(Buffer.from(str2codepoints(input))))
+	if (Buffer.from(input).toString("utf-8").includes("\ufffd"))
+		// replacement character
 		throw new Error("malformed UTF-8")
 
 	let src = input
