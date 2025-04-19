@@ -3,7 +3,7 @@ import { readdirSync } from "node:fs"
 import Load, { type Extensions } from "./main"
 import { testFormat } from "./testformat"
 
-const testsDir = "../confetti/tests/suite"
+const testsDir = "../confetti/tests/conformance"
 
 type testCase = {
 	Name: string
@@ -87,6 +87,13 @@ function runConformanceTest(c: testCase) {
 		out = `error: ${e.message}\n`
 	}
 
+	if (out !== rout)
+		console.log(
+			`Test case ${c.Name} failed:\nExpected:\n`,
+			Buffer.from(rout),
+			"\nGot:\n",
+			Buffer.from(out)
+		)
 	expect(out).toEqual(rout)
 }
 
@@ -97,7 +104,9 @@ test("conformance", async () => {
 		const c = cases[i]
 		if (!c) continue
 
-		console.log(`Test case ${i + 1}\nconfetti/tests/suite/${c.Name}.conf`)
+		console.log(
+			`Test case ${i + 1}\nconfetti/tests/conformance/${c.Name}.conf`
+		)
 		runConformanceTest(c)
 	}
 })

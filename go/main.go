@@ -1,4 +1,4 @@
-// package confetti-go implements the Confetti configuration language.
+// package confetti implements the Confetti configuration language.
 package confetti
 
 import "fmt"

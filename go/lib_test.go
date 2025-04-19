@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	confetti "github.com/Heliodex/confetti-go"
+	confetti "github.com/Heliodex/confetti"
 )
 
 func printDirective(d confetti.Directive, depth int) {

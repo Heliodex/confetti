@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-const testsDir = "../confetti/tests/suite"
+const testsDir = "../confetti/tests/conformance"
 
 type testCase struct {
 	Name          string
@@ -112,7 +112,7 @@ func TestConformance(t *testing.T) {
 	}
 
 	for i, c := range cases {
-		t.Logf("Test case %d\nconfetti/tests/suite/%s.conf", i+1, c.Name)
+		t.Logf("Test case %d\nconfetti/tests/conformance/%s.conf", i+1, c.Name)
 		runConformanceTest(c, t)
 	}
 }
@@ -142,7 +142,7 @@ func TestReformat(t *testing.T) {
 		if strings.HasPrefix(*c.Output, "error:") {
 			continue
 		}
-		t.Logf("Test case %d\nconfetti/tests/suite/%s.conf", i+1, c.Name)
+		t.Logf("Test case %d\nconfetti/tests/conformance/%s.conf", i+1, c.Name)
 		runReformatTest(c, t)
 	}
 }
