@@ -15,14 +15,20 @@ const isControl = (r: number): boolean =>
 	!isLineTerminator(r) &&
 	!whitespaceRegex.test(String.fromCharCode(r))
 
-const isSurrogate = (r: number): boolean => r >= 0xd800 && r <= 0xdfff
+// makes up for js bad unicode handling lel
+const isHighSurrogate = (r: number): boolean => r >= 0xd800 && r <= 0xdbff
+const isLowSurrogate = (r: number): boolean => r >= 0xdc00 && r <= 0xdfff
 
 // characters not in any Unicode category
 const isUnassigned = (r: number): boolean => r >= 0x40000 && r <= 0xeffff
 
 // surrogate, private use, unassigned
 const isForbidden = (r: number): boolean =>
-	isControl(r) || isSurrogate(r) || r > 0x10ffff || isUnassigned(r)
+	isControl(r) ||
+	isHighSurrogate(r) ||
+	isLowSurrogate(r) ||
+	r > 0x10ffff ||
+	isUnassigned(r)
 
 // " # ; { }
 const reserved = [0x22, 0x23, 0x3b, 0x7b, 0x7d]
@@ -49,6 +55,16 @@ class stream {
 		// TODO: wip error type
 		const r = this.src.charCodeAt(this.pos)
 		if (Number.isNaN(r)) return [0, "EOF"]
+
+		// if high surrogate, add second part (low surrogate)
+		if (isHighSurrogate(r)) {
+			const next = this.src.charCodeAt(this.pos + 1)
+			if (isLowSurrogate(next)) {
+				this.pos += 1
+				return [0x10000 + ((r - 0xd800) << 10) + (next - 0xdc00), ""]
+			}
+			return [0, `${errForbidden} U+${r.toString(16).toUpperCase()}`]
+		}
 
 		if (isForbidden(r)) {
 			// get illegal character as U+XXXX
@@ -102,8 +118,8 @@ const errIncompleteEscape = new Error("incomplete escape sequence")
 const errIllegalEscape = new Error("illegal escape character")
 const errUnclosedQuoted = new Error("unclosed quoted")
 
-function checkEscape(s: stream, r: number, quoted: number): [string, boolean] {
-	if (r !== 0x5c /* \ */) return [String.fromCharCode(r), false]
+function checkEscape(s: stream, r: number, quoted: number): [number, boolean] {
+	if (r !== 0x5c /* \ */) return [r, false]
 
 	s.increment(1)
 	const [c, err] = s.current()
@@ -119,10 +135,10 @@ function checkEscape(s: stream, r: number, quoted: number): [string, boolean] {
 		}
 		if (quoted === 0 || (quoted === 1 && !isLineTerminator(c)))
 			throw errIllegalEscape
-		return ["", true] // r = "" used to signify line terminatosr
+		return [0, true] // r = 0 used to signify line terminatosr
 	}
 
-	return [String.fromCharCode(c), true]
+	return [c, true]
 }
 
 function getPunctuator(s: stream, pstr: string): number {
@@ -161,8 +177,9 @@ function lex0qArgument(s: stream, exts: Extensions): [string, string] {
 		const [ec, escd] = checkEscape(s, c, 0)
 		if (escd) ogarg += "\\"
 
-		arg += ec
-		ogarg += ec
+		const cp = String.fromCharCode(ec)
+		arg += cp
+		ogarg += cp
 		s.increment(1)
 	}
 
@@ -186,14 +203,16 @@ function lex1qArgument(s: stream): [string, string] {
 		const [ec, escd] = checkEscape(s, c, 1)
 		if (escd) ogarg += "\\"
 
-		if (ec === "") {
+		if (ec === 0) {
 			// escaped line terminators allowed in quoted arguments
 			const [nc, _] = s.current()
 			ogarg += String.fromCharCode(nc)
 			continue
 		}
-		arg += ec
-		ogarg += ec
+
+		const cp = String.fromCharCode(ec)
+		arg += cp
+		ogarg += cp
 	}
 
 	throw errUnclosedQuoted
@@ -226,27 +245,17 @@ function lex3qArgument(s: stream): [string, string] {
 		const [ec, escd] = checkEscape(s, c, 3)
 		if (escd) ogarg += "\\"
 
-		arg += ec
-		ogarg += ec
+		const cp = String.fromCharCode(ec)
+		arg += cp
+		ogarg += cp
 		s.increment(1)
 	}
 
 	throw errUnclosedQuoted
 }
 
-function str2codepoints(str: string): number[] {
-	const codepoints: number[] = []
-	for (let i = 0; i < str.length; i++) {
-		const code = str.codePointAt(i)
-		if (code === undefined) continue
-		codepoints.push(code)
-		if (code > 0xffff) i++ // surrogate pair
-	}
-	return codepoints
-}
-
 export function lex(input: string, exts: Extensions): token[] {
-	if (Buffer.from(input).toString("utf-8").includes("\ufffd"))
+	if (input.includes("\ufffd"))
 		// replacement character
 		throw new Error("malformed UTF-8")
 
