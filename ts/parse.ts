@@ -2,7 +2,7 @@ import type { token, tokenType } from "./lex"
 import type { Extensions } from "./main"
 
 export type Directive = {
-	Arguments: string[]
+	Arguments: number[][]
 	Subdirectives: Directive[]
 }
 
@@ -49,7 +49,7 @@ export function parse(ts: token[], exts: Extensions): Directive[] {
 			case "0qArgument":
 			case "1qArgument":
 			case "3qArgument":
-				current.Arguments.push(t.Content || "")
+				current.Arguments.push(t.Content || [])
 				break
 			case "Semicolon": {
 				const prev = prevSignificant()

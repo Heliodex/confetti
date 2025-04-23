@@ -89,7 +89,10 @@ function runConformanceTest(c: testCase) {
 
 	if (out !== rout)
 		console.log(
-			`Test case ${c.Name} failed:\nExpected:\n`,
+			`Test case ${c.Name} failed:`,
+			"\nInput:\n",
+			Buffer.from(rin),
+			"\nExpected:\n",
 			Buffer.from(rout),
 			"\nGot:\n",
 			Buffer.from(out)

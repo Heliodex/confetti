@@ -103,8 +103,8 @@ export type tokenType =
 
 export type token = {
 	Type: tokenType
-	Content?: string
-	Og?: string
+	Content?: number[]
+	Og?: number[]
 }
 
 // A directive “argument” shall be a sequence of one or more characters from the argument character set. The argument character set shall consist of any Unicode scalar value excluding characters from the white space, line terminator, reserved punctuator, and forbidden character sets.
@@ -160,9 +160,9 @@ function getPunctuator(s: stream, pstr: string): number {
 	return 0
 }
 
-function lex0qArgument(s: stream, exts: Extensions): [string, string] {
-	let arg = ""
-	let ogarg = ""
+function lex0qArgument(s: stream, exts: Extensions): [number[], number[]] {
+	const arg: number[] = []
+	const ogarg: number[] = []
 
 	while (s.reading()) {
 		const [c, err] = s.current()
@@ -175,22 +175,21 @@ function lex0qArgument(s: stream, exts: Extensions): [string, string] {
 			return [arg, ogarg]
 
 		const [ec, escd] = checkEscape(s, c, 0)
-		if (escd) ogarg += "\\"
+		if (escd) ogarg.push(0x5c /* \ */)
 
-		const cp = String.fromCharCode(ec)
-		arg += cp
-		ogarg += cp
+		arg.push(ec)
+		ogarg.push(ec)
 		s.increment(1)
 	}
 
 	return [arg, ogarg]
 }
 
-function lex1qArgument(s: stream): [string, string] {
-	let arg = ""
-	let ogarg = ""
+function lex1qArgument(s: stream): [number[], number[]] {
+	const arg: number[] = []
+	const ogarg: number[] = []
 
-	for (; s.reading(); s.increment(1)) {
+	while (s.reading()) {
 		const [c, err] = s.current()
 		if (err.startsWith(errForbidden)) throw new Error(errForbidden)
 		if (!quotedArgumentOk(c)) {
@@ -201,26 +200,26 @@ function lex1qArgument(s: stream): [string, string] {
 		}
 
 		const [ec, escd] = checkEscape(s, c, 1)
-		if (escd) ogarg += "\\"
+		if (escd) ogarg.push(0x5c /* \ */)
 
 		if (ec === 0) {
 			// escaped line terminators allowed in quoted arguments
 			const [nc, _] = s.current()
-			ogarg += String.fromCharCode(nc)
+			ogarg.push(nc)
 			continue
 		}
 
-		const cp = String.fromCharCode(ec)
-		arg += cp
-		ogarg += cp
+		arg.push(ec)
+		ogarg.push(ec)
+		s.increment(1)
 	}
 
 	throw errUnclosedQuoted
 }
 
-function lex3qArgument(s: stream): [string, string] {
-	let arg = ""
-	let ogarg = ""
+function lex3qArgument(s: stream): [number[], number[]] {
+	const arg: number[] = []
+	const ogarg: number[] = []
 
 	let endsMatched = 0
 	while (s.reading()) {
@@ -229,7 +228,7 @@ function lex3qArgument(s: stream): [string, string] {
 		if (!tripleQuotedArgumentOk(c)) {
 			if (c !== 0x22 /* " */) throw errUnclosedQuoted
 
-			ogarg += String.fromCharCode(c)
+			ogarg.push(c)
 			s.increment(1)
 
 			if (endsMatched === 2) return [arg, ogarg.slice(0, -3)]
@@ -237,17 +236,16 @@ function lex3qArgument(s: stream): [string, string] {
 			continue
 		}
 		if (endsMatched > 0) {
-			arg += '"'.repeat(endsMatched)
+			for (let i = 0; i < endsMatched; i++) arg.push(0x22 /* " */)
 			endsMatched = 0
 			continue
 		}
 
 		const [ec, escd] = checkEscape(s, c, 3)
-		if (escd) ogarg += "\\"
+		if (escd) ogarg.push(0x5c /* \ */)
 
-		const cp = String.fromCharCode(ec)
-		arg += cp
-		ogarg += cp
+		arg.push(ec)
+		ogarg.push(ec)
 		s.increment(1)
 	}
 
@@ -264,10 +262,10 @@ export function lex(input: string, exts: Extensions): token[] {
 
 	// remove BOMs
 	if (src.startsWith("\ufeff")) {
-		ts.push({ Type: "Unicode", Content: "\ufeff" })
+		ts.push({ Type: "Unicode", Content: [0xfeff] })
 		src = src.slice(1)
 	} else if (src.startsWith("\ufffe")) {
-		ts.push({ Type: "Unicode", Content: "\ufffe" })
+		ts.push({ Type: "Unicode", Content: [0xfffe] })
 		src = src.slice(1)
 	}
 
@@ -276,6 +274,13 @@ export function lex(input: string, exts: Extensions): token[] {
 	if (src.endsWith("\u001a")) {
 		removeCtrlZ = true
 		src = src.slice(0, -1)
+	}
+
+	// character buffer
+	const buf: number[] = []
+	for (let i = 0; i < src.length; i++) {
+		const c = src.charCodeAt(i)
+		buf.push(c)
 	}
 
 	// check for forbidden characters must be done based on token/location
@@ -287,10 +292,10 @@ export function lex(input: string, exts: Extensions): token[] {
 		const op = s.pos
 		if (isLineTerminator(c)) {
 			s.increment(1)
-			ts.push({ Type: "Newline", Content: String.fromCharCode(c) })
+			ts.push({ Type: "Newline", Content: [c] })
 		} else if (isWhitespace(c)) {
 			s.increment(1)
-			ts.push({ Type: "Whitespace", Content: String.fromCharCode(c) })
+			ts.push({ Type: "Whitespace", Content: [c] })
 		} else if (
 			"CStyleComments" in exts &&
 			c === 0x2f &&
@@ -303,8 +308,12 @@ export function lex(input: string, exts: Extensions): token[] {
 				if (err.startsWith(errForbidden)) throw new Error(errForbidden)
 				if (err || isLineTerminator(c)) break
 			}
-			const content = src.slice(op + 2, s.pos)
-			ts.push({ Type: "Comment", Content: content, Og: `#${content}` })
+			const content = buf.slice(op + 2, s.pos)
+			ts.push({
+				Type: "Comment",
+				Content: content,
+				Og: Array.from(Uint8Array.from(`#${content}`)),
+			})
 		} else if (c === 0x23 /* # */) {
 			// comment until end of line
 			while (true) {
@@ -313,8 +322,12 @@ export function lex(input: string, exts: Extensions): token[] {
 				if (err.startsWith(errForbidden)) throw new Error(errForbidden)
 				if (err || isLineTerminator(c)) break
 			}
-			const content = src.slice(op + 1, s.pos)
-			ts.push({ Type: "Comment", Content: content, Og: `#${content}` })
+			const content = buf.slice(op + 1, s.pos)
+			ts.push({
+				Type: "Comment",
+				Content: content,
+				Og: Array.from(Uint8Array.from(`#${content}`)),
+			})
 		} else if (
 			"CStyleComments" in exts &&
 			c === 0x2f &&
@@ -325,14 +338,15 @@ export function lex(input: string, exts: Extensions): token[] {
 				s.increment(1)
 				const [c, err] = s.current()
 				if (err.startsWith(errForbidden)) throw new Error(errForbidden)
-				if (err) {
-					console.log(err)
-					throw new Error("unterminated multi-line comment")
-				}
+				if (err) throw new Error("unterminated multi-line comment")
 				if (c === 0x2a /* * */ && s.next(1) === 0x2f /* / */) break
 			}
-			const content = src.slice(op + 2, s.pos)
-			ts.push({ Type: "Comment", Content: content, Og: `/*${content}*/` })
+			const content = buf.slice(op + 2, s.pos)
+			ts.push({
+				Type: "Comment",
+				Content: content,
+				Og: Array.from(Uint8Array.from(`/*${content}*/`)),
+			})
 			s.increment(2) // */
 		} else if (c === 0x3b /* ; */) {
 			s.increment(1)
@@ -360,11 +374,11 @@ export function lex(input: string, exts: Extensions): token[] {
 					depth--
 				}
 			}
-			const content = src.slice(op + 1, s.pos)
+			const content = buf.slice(op + 1, s.pos)
 			ts.push({
 				Type: "0qArgument",
 				Content: content,
-				Og: `(${content})`,
+				Og: Array.from(Uint8Array.from(`(${content})`)),
 			})
 			s.increment(1) // )
 		} else if (
@@ -373,7 +387,7 @@ export function lex(input: string, exts: Extensions): token[] {
 		) {
 			// read punctuator as argument
 			s.increment(getPunctuator(s, exts.PunctuatorArguments))
-			const content = src.slice(op, s.pos)
+			const content = buf.slice(op, s.pos)
 			ts.push({ Type: "0qArgument", Content: content, Og: content })
 		} else if (c === 0x22 && s.next(1) === 0x22 && s.next(2) === 0x22) {
 			// triple quated argument
@@ -392,7 +406,7 @@ export function lex(input: string, exts: Extensions): token[] {
 		}
 	}
 
-	if (removeCtrlZ) ts.push({ Type: "Unicode", Content: "\u001a" })
+	if (removeCtrlZ) ts.push({ Type: "Unicode", Content: [0x001a] })
 
 	return ts
 }
