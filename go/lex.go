@@ -162,6 +162,7 @@ func getPunctuator(s *stream, ps string) (l int) {
 	for _, p := range puncts {
 		rest := s.src[s.pos:]
 		if l = len([]rune(p)); l <= len(rest) && string(rest[:l]) == p {
+			fmt.Println("punctuator", []rune(p)[0], l)
 			return
 		}
 	}
@@ -396,6 +397,9 @@ func lex(src string, exts Extensions) (ts []token, err error) {
 			// read punctuator as argument
 			s.increment(getPunctuator(&s, exts[ExtPunctuatorArguments]))
 			content := string(s.src[op:s.pos])
+
+			fmt.Println("punctuator", []rune(content))
+
 			ts = append(ts, token{Type: tok0qArgument, Content: content, Og: content})
 
 		case c == '"' && s.next(1) == '"' && s.next(2) == '"':

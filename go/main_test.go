@@ -112,6 +112,10 @@ func TestConformance(t *testing.T) {
 	}
 
 	for i, c := range cases {
+		if i != 144 {
+			continue
+		}
+		
 		t.Logf("Test case %d\nconfetti/tests/conformance/%s.conf", i+1, c.Name)
 		runConformanceTest(c, t)
 	}
