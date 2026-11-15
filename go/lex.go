@@ -100,7 +100,7 @@ const (
 )
 
 type token struct {
-	Type        tokenType
+	Type tokenType
 	Content, Og string
 }
 
@@ -119,8 +119,8 @@ func tripleQuotedArgumentOk(r rune) bool {
 
 var (
 	errIncompleteEscape = errors.New("incomplete escape sequence")
-	errIllegalEscape    = errors.New("illegal escape character")
-	errUnclosedQuoted   = errors.New("unclosed quoted")
+	errIllegalEscape = errors.New("illegal escape character")
+	errUnclosedQuoted = errors.New("unclosed quoted")
 )
 
 func checkEscape(s *stream, c rune, quoted uint8) (r rune, escaped bool, err error) {

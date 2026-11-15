@@ -9,7 +9,7 @@ import (
 
 // The entire AST of the language is ONE struct!!!!
 type Directive struct {
-	Arguments     []string
+	Arguments []string
 	Subdirectives []Directive
 }
 

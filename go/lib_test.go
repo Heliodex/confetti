@@ -21,9 +21,9 @@ func printDirective(d confetti.Directive, depth int) {
 }
 
 type LibraryTest struct {
-	Input      string
+	Input string
 	Extensions confetti.Extensions
-	Output     []confetti.Directive
+	Output []confetti.Directive
 }
 
 var tests = []LibraryTest{
@@ -36,7 +36,7 @@ msg="(nil message)"
 echo msg
 `,
 		Extensions: confetti.Extensions{
-			confetti.ExtCStyleComments:      "",
+			confetti.ExtCStyleComments: "",
 			confetti.ExtExpressionArguments: "",
 			confetti.ExtPunctuatorArguments: "=\n:=",
 		},

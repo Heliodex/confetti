@@ -10,9 +10,9 @@ import (
 const testsDir = "../confetti/tests/conformance"
 
 type testCase struct {
-	Name          string
+	Name string
 	Input, Output *string
-	Extensions    Extensions
+	Extensions Extensions
 }
 
 func getCases(t *testing.T) (cases []*testCase, err error) {
@@ -115,7 +115,7 @@ func TestConformance(t *testing.T) {
 		if i != 144 {
 			continue
 		}
-		
+
 		t.Logf("Test case %d\nconfetti/tests/conformance/%s.conf", i+1, c.Name)
 		runConformanceTest(c, t)
 	}
