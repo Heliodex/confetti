@@ -12,9 +12,13 @@ func testReformat(ts []token) (string, error) {
 		case tok0qArgument:
 			b.WriteString(t.Og)
 		case tok1qArgument:
-			b.WriteString("\"" + t.Og + "\"")
+			b.WriteString("\"")
+			b.WriteString(t.Og)
+			b.WriteString("\"")
 		case tok3qArgument:
-			b.WriteString("\"\"\"" + t.Og + "\"\"\"")
+			b.WriteString("\"\"\"")
+			b.WriteString(t.Og)
+			b.WriteString("\"\"\"")
 		case tokNewline:
 			b.WriteString(t.Content)
 		case tokLineContinuation:
