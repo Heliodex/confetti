@@ -24,11 +24,7 @@ const isUnassigned = (r: number): boolean => r >= 0x40000 && r <= 0xeffff
 
 // surrogate, private use, unassigned
 const isForbidden = (r: number): boolean =>
-	isControl(r) ||
-	isHighSurrogate(r) ||
-	isLowSurrogate(r) ||
-	r > 0x10ffff ||
-	isUnassigned(r)
+	isControl(r) || isHighSurrogate(r) || r > 0x10ffff || isUnassigned(r)
 
 // " # ; { }
 const reserved = [0x22, 0x23, 0x3b, 0x7b, 0x7d]
@@ -59,11 +55,11 @@ class stream {
 		// if high surrogate, add second part (low surrogate)
 		if (isHighSurrogate(r)) {
 			const next = this.src.charCodeAt(this.pos + 1)
-			if (isLowSurrogate(next)) {
-				this.pos += 1
-				return [0x10000 + ((r - 0xd800) << 10) + (next - 0xdc00), ""]
-			}
-			return [0, `${errForbidden} U+${r.toString(16).toUpperCase()}`]
+			if (!isLowSurrogate(next))
+				return [0, `${errForbidden} U+${r.toString(16).toUpperCase()}`]
+
+			this.pos += 1
+			return [0x10000 + ((r - 0xd800) << 10) + (next - 0xdc00), ""]
 		}
 
 		if (isForbidden(r)) {
@@ -154,7 +150,9 @@ function getPunctuator(s: stream, pstr: string): number {
 	for (const p of puncts) {
 		const rest = s.src.slice(s.pos)
 		const l = p.length
-		if (l <= rest.length && rest.slice(0, l) === p) return l
+		if (l <= rest.length && rest.slice(0, l) === p) {
+			console.log("punctuator", p.charCodeAt(0), l)
+			return l}
 	}
 
 	return 0
@@ -362,7 +360,8 @@ export function lex(input: string, exts: Extensions): token[] {
 			ts.push({ Type: "LineContinuation" })
 		} else if ("ExpressionArguments" in exts && c === 0x28 /* ( */) {
 			// read until corresponding closing parenthesis
-			for (let depth = 0; ; ) {
+			let depth = 0
+			while (true) {
 				s.increment(1)
 				const [c, err] = s.current()
 				if (err.startsWith(errForbidden)) throw new Error(errForbidden)
@@ -388,6 +387,9 @@ export function lex(input: string, exts: Extensions): token[] {
 			// read punctuator as argument
 			s.increment(getPunctuator(s, exts.PunctuatorArguments))
 			const content = buf.slice(op, s.pos)
+
+		console.log("punctuator", content)
+
 			ts.push({ Type: "0qArgument", Content: content, Og: content })
 		} else if (c === 0x22 && s.next(1) === 0x22 && s.next(2) === 0x22) {
 			// triple quated argument
