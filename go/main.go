@@ -3,7 +3,10 @@ package confetti
 
 import "fmt"
 
-type extension uint8
+type (
+	extension uint8
+	Extensions map[extension]string
+)
 
 const (
 	_ extension = iota
@@ -12,10 +15,9 @@ const (
 	ExtPunctuatorArguments
 )
 
-type Extensions map[extension]string
-
 func (e Extensions) Has(ext extension) bool {
 	_, ok := e[ext]
+
 	return ok
 }
 

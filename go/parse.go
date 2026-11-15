@@ -17,6 +17,7 @@ func (d Directive) Equals(other Directive) (eq bool) {
 	if len(d.Arguments) != len(other.Arguments) {
 		return
 	}
+
 	for i, arg := range d.Arguments {
 		if arg != other.Arguments[i] {
 			return
@@ -26,6 +27,7 @@ func (d Directive) Equals(other Directive) (eq bool) {
 	if len(d.Subdirectives) != len(other.Subdirectives) {
 		return
 	}
+
 	for i, sub := range d.Subdirectives {
 		if !sub.Equals(other.Subdirectives[i]) {
 			return
@@ -37,15 +39,17 @@ func (d Directive) Equals(other Directive) (eq bool) {
 
 func parse(ts []token, exts Extensions) (p []Directive, err error) {
 	var current Directive
+
 	push := func() {
 		if current.Arguments == nil {
 			return
 		}
+
 		p = append(p, current)
 		current = Directive{}
 	}
 
-	i := 0
+	var i int
 
 	for prevSignificant := func() tokenType {
 		for ci := i - 1; ci > 0; ci-- {
@@ -53,21 +57,19 @@ func parse(ts []token, exts Extensions) (p []Directive, err error) {
 				return prev
 			}
 		}
+
 		return tokUnicode
 	}; i < len(ts); i++ {
 		switch t := ts[i]; t.Type {
 		case tok0qArgument, tok1qArgument, tok3qArgument:
 			current.Arguments = append(current.Arguments, t.Content)
-
 		case tokSemicolon: // end of directive
 			if prev := prevSignificant(); prev == tokSemicolon || prev == tokNewline || prev == tokLineContinuation {
 				return nil, errors.New("unexpected ';'")
 			}
 			push()
-
 		case tokNewline: // end of directive
 			push()
-
 		case tokOpenBrace:
 			if i == len(ts)-1 || prevSignificant() == tokSemicolon {
 				return nil, fmt.Errorf("unexpected '{'")
@@ -76,6 +78,7 @@ func parse(ts []token, exts Extensions) (p []Directive, err error) {
 			// Get all tokens until next close brace
 			i++
 			si := i
+
 			for depth := 0; i < len(ts); i++ {
 				// escapes should be dealt with in lexer
 				if t2 := ts[i]; t2.Type == tokOpenBrace {
@@ -84,6 +87,7 @@ func parse(ts []token, exts Extensions) (p []Directive, err error) {
 					if depth == 0 {
 						break
 					}
+
 					depth--
 				} else if i == len(ts)-1 {
 					return nil, fmt.Errorf("expected '}'")
@@ -100,18 +104,16 @@ func parse(ts []token, exts Extensions) (p []Directive, err error) {
 			}
 
 			current.Subdirectives = subp
-			push()
 
+			push()
 		case tokCloseBrace:
 			return nil, errors.New("found '}' without matching '{'")
-
 		case tokLineContinuation:
 			if current.Arguments == nil {
 				return nil, fmt.Errorf("unexpected line continuation")
 			}
 		}
 	}
-
 	push()
 	return
 }

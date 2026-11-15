@@ -20,7 +20,6 @@ func testFormat(p []Directive, depth int) string {
 			b.WriteByte('\n')
 			continue
 		}
-
 		b.WriteString(" [\n" + testFormat(d.Subdirectives, depth+1) + indent + "]\n")
 	}
 

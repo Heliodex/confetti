@@ -7,13 +7,13 @@ import (
 	"testing"
 )
 
-const testsDir = "../confetti/tests/conformance"
-
 type testCase struct {
 	Name string
 	Input, Output *string
 	Extensions Extensions
 }
+
+const testsDir = "../confetti/tests/conformance"
 
 func getCases(t *testing.T) (cases []*testCase, err error) {
 	dir, err := os.ReadDir(testsDir)
@@ -56,7 +56,6 @@ func getCases(t *testing.T) (cases []*testCase, err error) {
 
 		return nil
 	}
-
 dirloop:
 	for _, entry := range dir {
 		split := strings.Split(entry.Name(), ".")
@@ -69,13 +68,18 @@ dirloop:
 			} else if err = addTest(c, n, v); err != nil {
 				return
 			}
+
 			continue dirloop
 		}
 
-		c := &testCase{Name: n}
+		c := &testCase{
+			Name: n,
+		}
+
 		if err = addTest(c, n, v); err != nil {
 			return
 		}
+
 		cases = append(cases, c)
 	}
 
@@ -94,6 +98,7 @@ func runConformanceTest(c *testCase, t *testing.T) {
 	rin, rout, exts := *c.Input, *c.Output, c.Extensions
 
 	var out string
+
 	if p, err := Load(rin, exts); err != nil {
 		out = err.Error() + "\n"
 	} else {
@@ -115,7 +120,6 @@ func TestConformance(t *testing.T) {
 		if i != 144 {
 			continue
 		}
-
 		t.Logf("Test case %d\nconfetti/tests/conformance/%s.conf", i+1, c.Name)
 		runConformanceTest(c, t)
 	}
@@ -126,8 +130,7 @@ func runReformatTest(c *testCase, t *testing.T) {
 
 	var out string
 
-	ts, err := lex(rin, exts)
-	if err != nil {
+	if ts, err := lex(rin, exts); err != nil {
 		t.Fatal(err)
 	} else if out, err = testReformat(ts); err != nil {
 		t.Fatal(err)
