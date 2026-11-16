@@ -56,6 +56,7 @@ func getPunctuator(s *stream, ps string) (l int) {
 	slices.SortFunc(puncts, func(a, b string) int {
 		return len([]rune(b)) - len([]rune(a)) // footgun: len() counts bytes for strings
 	})
+
 	for _, p := range puncts {
 		rest := s.src[s.pos:]
 		if l = len([]rune(p)); l <= len(rest) && string(rest[:l]) == p {
@@ -130,7 +131,9 @@ func checkEscape(s *stream, c rune, quoted uint8) (r rune, escaped bool, err err
 	if c != '\\' {
 		return c, false, nil
 	}
+
 	s.increment(1)
+
 	if c, err = s.current(); err != nil {
 		if errors.Is(err, errForbidden) || quoted == 0 {
 			return 0, false, errIllegalEscape
@@ -200,7 +203,9 @@ func lex1qArgument(s *stream) (arg, ogarg []rune, err error) {
 			if c != '"' {
 				return nil, nil, errUnclosedQuoted
 			}
+
 			s.increment(1)
+
 			return arg, ogarg, nil
 		}
 
@@ -215,6 +220,7 @@ func lex1qArgument(s *stream) (arg, ogarg []rune, err error) {
 			// escaped line terminators allowed in quoted arguments
 			nc, _ := s.current()
 			ogarg = append(ogarg, nc)
+
 			continue
 		}
 
@@ -242,15 +248,18 @@ func lex3qArgument(s *stream) (arg, ogarg []rune, err error) {
 			ogarg = append(ogarg, c)
 
 			s.increment(1)
+
 			if endsMatched == 2 {
 				return arg, ogarg[:len(ogarg)-3], nil
 			}
 
 			endsMatched++
+
 			continue
 		} else if endsMatched > 0 {
 			arg = append(arg, slices.Repeat([]rune{'"'}, endsMatched)...)
 			endsMatched = 0
+
 			continue
 		}
 
@@ -303,7 +312,6 @@ func lex(src string, exts Extensions) (ts []token, err error) {
 	}
 
 	// check for forbidden characters must be done based on token/location
-
 	for s := (stream{
 		src: []rune(src),
 	}); s.reading(); {
@@ -331,6 +339,7 @@ func lex(src string, exts Extensions) (ts []token, err error) {
 			// C-style comment
 			for s.increment(1); ; {
 				s.increment(1)
+
 				if c, err = s.current(); errors.Is(err, errForbidden) {
 					return nil, errForbidden
 				} else if err != nil || isLineTerminator(c) {
@@ -348,6 +357,7 @@ func lex(src string, exts Extensions) (ts []token, err error) {
 			// comment until end of line
 			for {
 				s.increment(1)
+
 				if c, err = s.current(); errors.Is(err, errForbidden) {
 					return nil, errForbidden
 				} else if err != nil || isLineTerminator(c) {
@@ -365,6 +375,7 @@ func lex(src string, exts Extensions) (ts []token, err error) {
 			// block comment
 			for s.increment(1); ; {
 				s.increment(1)
+
 				if c, err = s.current(); errors.Is(err, errForbidden) {
 					return nil, errForbidden
 				} else if err != nil {
@@ -382,7 +393,6 @@ func lex(src string, exts Extensions) (ts []token, err error) {
 			})
 
 			s.increment(2) // */
-
 		case c == ';':
 			s.increment(1)
 
@@ -411,6 +421,7 @@ func lex(src string, exts Extensions) (ts []token, err error) {
 			// read until corresponding closing parenthesis
 			for depth := 0; ; {
 				s.increment(1)
+
 				if c, err = s.current(); errors.Is(err, errForbidden) {
 					return nil, errForbidden
 				} else if err != nil || isLineTerminator(c) {
@@ -434,7 +445,6 @@ func lex(src string, exts Extensions) (ts []token, err error) {
 			})
 
 			s.increment(1) // )
-
 		case exts.Has(ExtPunctuatorArguments) && getPunctuator(&s, exts[ExtPunctuatorArguments]) != 0:
 			// read punctuator as argument
 			s.increment(getPunctuator(&s, exts[ExtPunctuatorArguments]))
@@ -442,7 +452,6 @@ func lex(src string, exts Extensions) (ts []token, err error) {
 			content := string(s.src[op:s.pos])
 
 			// fmt.Println("punctuator", []rune(content))
-
 			ts = append(ts, token{
 				Type: tok0qArgument,
 				Content: content,

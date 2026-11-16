@@ -54,6 +54,7 @@ func getCases(t *testing.T) (cases []*testCase, err error) {
 
 		return nil
 	}
+
 dirloop:
 	for _, entry := range dir {
 		split := strings.Split(entry.Name(), ".")
@@ -118,6 +119,7 @@ func TestConformance(t *testing.T) {
 		if i != 144 {
 			continue
 		}
+
 		t.Logf("Test case %d\nconfetti/tests/conformance/%s.conf", i+1, c.Name)
 		runConformanceTest(c, t)
 	}
@@ -147,6 +149,7 @@ func TestReformat(t *testing.T) {
 		if strings.HasPrefix(*c.Output, "error:") {
 			continue
 		}
+
 		t.Logf("Test case %d\nconfetti/tests/conformance/%s.conf", i+1, c.Name)
 		runReformatTest(c, t)
 	}

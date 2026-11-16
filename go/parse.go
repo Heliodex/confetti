@@ -67,6 +67,7 @@ func parse(ts []token, exts Extensions) (p []Directive, err error) {
 			if prev := prevSignificant(); prev == tokSemicolon || prev == tokNewline || prev == tokLineContinuation {
 				return nil, errors.New("unexpected ';'")
 			}
+
 			push()
 		case tokNewline: // end of directive
 			push()
@@ -114,6 +115,8 @@ func parse(ts []token, exts Extensions) (p []Directive, err error) {
 			}
 		}
 	}
+
 	push()
+
 	return
 }

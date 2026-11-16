@@ -51,6 +51,7 @@ func printDirective(d confetti.Directive, depth int) {
 	prefix := strings.Repeat("  ", depth)
 
 	fmt.Println(prefix + "Directive:")
+
 	for _, arg := range d.Arguments {
 		fmt.Printf(prefix+"  %q\n", arg)
 	}
@@ -70,6 +71,7 @@ func TestLibrary(t *testing.T) {
 		for i, d := range dirs {
 			fmt.Printf("Directive %d:\n", i)
 			printDirective(d, 0)
+
 			if !d.Equals(test.Output[i]) {
 				t.Fatalf("Directive mismatch at index %d\nExpected:\n%v\nGot:\n%v", i, test.Output[i], d)
 			}
