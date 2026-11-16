@@ -40,6 +40,10 @@ const (
 var (
 	lineTerminators = []rune{0x0a, 0x0b, 0x0c, 0x0d, 0x85, 0x2028, 0x2029}
 	reserved = []rune{'"', '#', ';', '{', '}'}
+	errForbidden = errors.New("illegal character")
+	errIncompleteEscape = errors.New("incomplete escape sequence")
+	errIllegalEscape = errors.New("illegal escape character")
+	errUnclosedQuoted = errors.New("unclosed quoted")
 )
 
 func getPunctuator(s *stream, ps string) (l int) {
@@ -47,6 +51,7 @@ func getPunctuator(s *stream, ps string) (l int) {
 	ps = strings.ReplaceAll(ps, "\r", "\n")
 	ps = strings.TrimSpace(ps)
 	puncts := strings.Split(ps, "\n")
+
 	// sort puncts by length descending
 	slices.SortFunc(puncts, func(a, b string) int {
 		return len([]rune(b)) - len([]rune(a)) // footgun: len() counts bytes for strings
@@ -92,8 +97,6 @@ func isForbidden(r rune) bool {
 func isWhitespace(r rune) bool {
 	return !isLineTerminator(r) && unicode.IsSpace(r)
 }
-
-var errForbidden = errors.New("illegal character")
 
 // A directive “argument” shall be a sequence of one or more characters from the argument character set. The argument character set shall consist of any Unicode scalar value excluding characters from the white space, line terminator, reserved punctuator, and forbidden character sets.
 func argumentOk(r rune, exts Extensions) bool {
@@ -158,12 +161,6 @@ func (s *stream) next(n int) rune {
 
 	return 0
 }
-
-var (
-	errIncompleteEscape = errors.New("incomplete escape sequence")
-	errIllegalEscape = errors.New("illegal escape character")
-	errUnclosedQuoted = errors.New("unclosed quoted")
-)
 
 func (s *stream) reading() bool {
 	return s.pos < len(s.src)

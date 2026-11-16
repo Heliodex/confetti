@@ -28,9 +28,7 @@ func getCases(t *testing.T) (cases []*testCase, err error) {
 			return fmt.Errorf("failed to read file %s.%s: %w", n, v, err)
 		}
 
-		strdata := strings.ReplaceAll(string(data), "\r\n", "\n")
-
-		switch {
+		switch strdata := strings.ReplaceAll(string(data), "\r\n", "\n"); {
 		case v == "conf":
 			c.Input = &strdata
 		case v == "pass", v == "fail":
